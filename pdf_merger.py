@@ -53,12 +53,14 @@ class ImagePDFConverter:
         # Print success messages
         num_images = len(images)
         num_pdfs = len(pdf_writer.pages)
+        status = ""
         if num_images > 0:
-            print(f'Successfully converted {num_images} image(s) to PDF.')
+            status += f'Successfully converted {num_images} image(s) to PDF.'
         if num_pdfs > 0:
-            print(f'Successfully combined {num_pdfs} page(s) into {self.output_file}.')
+            status += f'\nSuccessfully combined {num_pdfs} page(s) into {self.output_file}.'
         if num_images == 0 and num_pdfs == 0:
-            print(f'No images or PDF files found in the provided file list!')
+            status += f'No images or PDF files found in the provided file list!'
+        return status
 
 
 if __name__ == '__main__':

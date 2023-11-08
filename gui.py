@@ -44,6 +44,24 @@ class ReorderableListWidget(QListWidget):
         else:
             super().dropEvent(event)
 
+    def addFiles(self, file_paths):
+        """
+        Add files to the list widget from a given list of file paths.
+        """
+        for file_path in file_paths:
+            if file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf')):
+                self.addItem(file_path)
+
+    def addItemsFromDirectory(self, directory_path):
+        """
+        Add files to the list widget from the selected directory.
+        """
+        for root, dirs, files in os.walk(directory_path):
+            for file in files:
+                if file.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf')):
+                    full_path = os.path.join(root, file)
+                    self.addItem(full_path)
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -51,7 +69,10 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle('Pdf Merger')
         self.resize(800, 500)
-
+        self.add_files_button = QPushButton("Add Files")
+        self.add_files_button.clicked.connect(self.add_files)
+        self.add_folder_button = QPushButton("Add Folder")
+        self.add_folder_button.clicked.connect(self.add_folder)
         self.output_file_name = ''
         self.setup_ui()
         self.create_menu_bar()
@@ -79,6 +100,11 @@ class MainWindow(QMainWindow):
 
         # Use a QVBoxLayout for the main layout
         main_layout = QVBoxLayout()
+        buttons_layout = QHBoxLayout()
+        buttons_layout.addWidget(self.add_files_button)
+        buttons_layout.addWidget(self.add_folder_button)
+        main_layout.addLayout(buttons_layout)
+
         main_layout.addWidget(self.list_widget)
         main_layout.addLayout(output_layout)
         main_layout.addWidget(self.convert_button)
@@ -86,6 +112,29 @@ class MainWindow(QMainWindow):
         container = QWidget()
         container.setLayout(main_layout)
         self.setCentralWidget(container)
+
+    def add_files(self):
+        options = QFileDialog.Options()
+        files, _ = QFileDialog.getOpenFileNames(
+            self,
+            "Select one or more files to open",
+            "",
+            "Images or PDF (*.png *.jpg *.jpeg *.pdf)",
+            options=options
+        )
+        if files:
+            self.list_widget.addFiles(files)
+
+    def add_folder(self):
+        options = QFileDialog.Options()
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Select Folder",
+            "",
+            options=options
+        )
+        if directory:
+            self.list_widget.addItemsFromDirectory(directory)
 
     def create_menu_bar(self):
         menu_bar = QMenuBar(self)
@@ -126,7 +175,8 @@ class MainWindow(QMainWindow):
         # self.backend.convert_files(file_list, output_file)
         QMessageBox.information(self, "Conversion Started", f"Files will be converted to {output_file}")
         converter = ImagePDFConverter(file_list, output_file)
-        converter.convert()
+        status = converter.convert()
+        QMessageBox.information(self, "Conversion Completed", status)
 
     def handle_close(self, event):
         # If needed, do any checks or cleanup before closing
