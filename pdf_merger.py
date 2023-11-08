@@ -137,8 +137,9 @@ class ImagePDFConverter:
             print(f'No images or PDF files found in {self.input_directory}!')
 
 
-# Usage
-# Make sure to import the required modules at the beginning of your script.
-# Create an instance of the class and call the convert method.
-converter = ImagePDFConverter('path_to_directory', 'output.pdf')
-converter.convert()
+if __name__ == '__main__':
+    # Usage
+    # Make sure to import the required modules at the beginning of your script.
+    # Create an instance of the class and call the convert method.
+    converter = ImagePDFConverter('files', 'output.pdf')
+    converter.convert()
