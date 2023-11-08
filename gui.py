@@ -1,7 +1,8 @@
 import os
+import subprocess
 import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QListWidget, QVBoxLayout, QWidget,
-                               QMessageBox, QMenuBar, QFileDialog, QPushButton, QLineEdit, QLabel, QHBoxLayout, QAbstractItemView)
+                               QMessageBox, QMenuBar, QFileDialog, QPushButton, QLineEdit, QLabel, QHBoxLayout, QAbstractItemView, QCheckBox)
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QAction
 from pdf_merger import ImagePDFConverter
 
@@ -73,6 +74,9 @@ class MainWindow(QMainWindow):
         self.add_files_button.clicked.connect(self.add_files)
         self.add_folder_button = QPushButton("Add Folder")
         self.add_folder_button.clicked.connect(self.add_folder)
+        self.open_pdf_checkbox = QCheckBox("Open PDF After Conversion")
+        self.open_pdf_checkbox.setChecked(True)  # Checkbox will be checked by default
+
         self.output_file_name = ''
         self.setup_ui()
         self.create_menu_bar()
@@ -97,6 +101,7 @@ class MainWindow(QMainWindow):
         output_layout.addWidget(QLabel("Output PDF:"))
         output_layout.addWidget(self.output_line_edit)
         output_layout.addWidget(self.output_file_button)
+        output_layout.addWidget(self.open_pdf_checkbox)
 
         # Use a QVBoxLayout for the main layout
         main_layout = QVBoxLayout()
@@ -170,12 +175,26 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "No Files", "Please drag and drop files to convert.")
             return
 
-        # Here you could call a backend function to process these files, for example:
-        # self.backend.convert_files(file_list, output_file)
+        # Process Files:
+        if not output_file.endswith('.pdf'):
+            output_file += '.pdf'
         QMessageBox.information(self, "Conversion Started", f"Files will be converted to {output_file}")
         converter = ImagePDFConverter(file_list, output_file)
         status = converter.convert()
         QMessageBox.information(self, "Conversion Completed", status)
+        if self.open_pdf_checkbox.isChecked():
+            self.open_pdf(output_file)
+
+    def open_pdf(self, file_path):
+        try:
+            if sys.platform == "win32":
+                os.startfile(file_path)
+            elif sys.platform == "darwin":  # macOS
+                subprocess.run(["open", file_path])
+            else:  # Linux variants
+                subprocess.run(["xdg-open", file_path])
+        except Exception as e:
+            QMessageBox.information(self, "Could Not Open PDF", f"{e}")
 
     def handle_close(self, event):
         # If needed, do any checks or cleanup before closing
