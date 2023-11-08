@@ -185,7 +185,8 @@ class ImagePDFConverter:
 
         # Save all images to a temporary PDF if there are any
         if images:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
+            # Use tempfile to create a temporary file with .pdf extension
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as tmp:
                 images[0].save(
                     tmp.name,
                     save_all=True,
@@ -193,10 +194,16 @@ class ImagePDFConverter:
                     quality=100,
                     resolution=100.0
                 )
+                # Ensure the temporary file is closed before attempting to read it
+                tmp.close()
+
+                # Read the temporary PDF and add its pages to the writer
                 temp_pdf_reader = PdfReader(tmp.name)
                 for page in temp_pdf_reader.pages:
                     pdf_writer.add_page(page)
-                os.unlink(tmp.name)  # Delete the temp file after adding pages to the writer
+
+                # Delete the temporary file after appending its pages to the writer
+                os.unlink(tmp.name)
 
         # Write the final PDF to the output file
         with open(self.output_file, "wb") as f:
