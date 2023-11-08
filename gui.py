@@ -150,7 +150,6 @@ class MainWindow(QMainWindow):
 
     def choose_output_file(self):
         options = QFileDialog.Options()
-        # options |= QFileDialog.DontUseNativeDialog
         file_name, _ = QFileDialog.getSaveFileName(self, "Choose output file", "", "PDF Files (*.pdf)", options=options)
         if file_name:
             if not file_name.endswith('.pdf'):
