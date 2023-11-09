@@ -5,6 +5,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QListWidget, QVBoxLayo
                                QMessageBox, QMenuBar, QFileDialog, QPushButton, QLineEdit, QLabel, QHBoxLayout, QAbstractItemView, QCheckBox)
 from PySide6.QtGui import QDragEnterEvent, QDropEvent, QAction
 from pdf_merger import ImagePDFConverter
+from PySide6.QtCore import QEvent, Qt
 
 
 class ReorderableListWidget(QListWidget):
@@ -62,6 +63,14 @@ class ReorderableListWidget(QListWidget):
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.pdf')):
                     full_path = os.path.join(root, file)
                     self.addItem(full_path)
+
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Delete:
+            # Get the selected items and remove them
+            for item in self.selectedItems():
+                self.takeItem(self.row(item))
+        else:
+            super().keyPressEvent(event)
 
 
 class MainWindow(QMainWindow):
