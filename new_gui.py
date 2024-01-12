@@ -4,7 +4,7 @@ from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
 from PySide6.QtWidgets import QListWidgetItem, QWidget, QHBoxLayout, QLabel, QCheckBox
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtGui import QPixmap, QImage, QDrag
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 
@@ -12,6 +12,8 @@ from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 class PdfPageItem(QWidget):
     def __init__(self, page_number, image):
         super().__init__()
+        self.page_number = page_number  # Add this line
+        self.drag_start_position = None  # Initialize here
         layout = QHBoxLayout()
 
         self.checkbox = QCheckBox(f"Page {page_number + 1}")
@@ -30,11 +32,36 @@ class PdfPageItem(QWidget):
     def is_checked(self):
         return self.checkbox.isChecked()
 
+    def update_page_number(self, new_number):
+        self.page_number = new_number  # Update the page number
+        self.checkbox.setText(f"Page {new_number}")
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.drag_start_position = event.position().toPoint()
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.LeftButton):
+            return
+        # if self.drag_start_position is None:  # Check if drag_start_position is set
+        #     return
+        if (event.position().toPoint() - self.drag_start_position).manhattanLength() < QApplication.startDragDistance():
+            return
+
+        drag = QDrag(self)
+        mimedata = QMimeData()
+        index = self.window().page_items.index(self)
+        mimedata.setText(str(index))  # Store the index of the widget
+        drag.setMimeData(mimedata)
+        drag.exec(Qt.MoveAction)
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.page_items = []
+        self.column_count = 3  # You can adjust this as needed
+
         self.setWindowTitle("PDF Merger")
         self.resize(1200, 800)
 
@@ -63,6 +90,48 @@ class MainWindow(QMainWindow):
 
         # Enable drag and drop
         self.central_widget.setAcceptDrops(True)
+        self.setAcceptDrops(True)
+
+    def dropEvent(self, event):
+        mime = event.mimeData()
+        if mime.hasUrls():  # Handling file drop
+            for url in mime.urls():
+                if url.isLocalFile() and url.fileName().endswith('.pdf'):
+                    self.load_pdf(url.toLocalFile())
+        elif mime.hasText():  # Handling internal widget drop
+            source_index = int(mime.text())
+            target_widget_pos = event.position().toPoint()
+            target_widget = self.childAt(target_widget_pos)
+            if target_widget and isinstance(target_widget, PdfPageItem):
+                target_index = self.page_items.index(target_widget)
+            else:
+                # Find the nearest widget to determine the drop position
+                target_index = self.find_nearest_widget_index(event.position().toPoint())
+
+            if target_index is not None:
+                self.page_items.insert(target_index, self.page_items.pop(source_index))
+
+                self.rearrange_grid(self.column_count)
+                self.update_page_numbers()
+
+        event.acceptProposedAction()
+
+    def find_nearest_widget_index(self, position):
+        min_distance = float('inf')
+        nearest_index = None
+
+        for i, widget in enumerate(self.page_items):
+            # Calculate the position of the widget in the grid
+            row, column = self.grid_layout.getItemPosition(i)[:2]
+            widget_pos = self.grid_layout.cellRect(row, column).center()
+
+            # Calculate the distance to the drop position
+            distance = (widget_pos - position).manhattanLength()
+            if distance < min_distance:
+                min_distance = distance
+                nearest_index = i
+
+        return nearest_index
 
     def wheelEvent(self, event):
         modifiers = QApplication.keyboardModifiers()
@@ -93,63 +162,66 @@ class MainWindow(QMainWindow):
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
             event.acceptProposedAction()
+        elif event.mimeData().hasText():
+            event.accept()
+        else:
+            event.ignore()
 
-    def dropEvent(self, event):
-        for url in event.mimeData().urls():
-            if url.isLocalFile() and url.fileName().endswith('.pdf'):
-                self.load_pdf(url.toLocalFile())
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasText():
+            event.accept()
+        else:
+            event.ignore()
 
     def load_pdf(self, pdf_path):
         doc = fitz.open(pdf_path)
-        self.clear_grid()
-
-        column = 0
-        row = 0
+        current_count = len(self.page_items)
         for page_num in range(len(doc)):
             page = doc.load_page(page_num)
             pix = page.get_pixmap()
             image = QImage(pix.samples, pix.width, pix.height, QImage.Format_RGB888)
 
-            item_widget = PdfPageItem(page_num, image)
-            self.grid_layout.addWidget(item_widget, row, column)
-
-            column += 1
-            if column >= 3:  # Adjust number of columns as needed
-                column = 0
-                row += 1
-
+            item_widget = PdfPageItem(current_count + page_num + 1, image)
+            self.page_items.append(item_widget)
+            self.grid_layout.addWidget(item_widget, (current_count + page_num) // self.column_count, (current_count + page_num) % self.column_count)
         doc.close()
-        self.update_grid_layout()
+        self.update_page_numbers()
 
     def resizeEvent(self, event):
         QMainWindow.resizeEvent(self, event)
+        # Dynamically calculate the number of columns
+        self.column_count = self.calculate_column_count()
         self.update_grid_layout()
 
     def update_grid_layout(self):
-        window_width = self.scroll_widget.width()
         # Determine the number of columns based on window width and zoom level
-        column_count = max(1, window_width // (self.zoom_level + 20))  # Adjust 20 for padding/margins
-        self.rearrange_grid(column_count)
+        self.column_count = self.calculate_column_count()
+        self.rearrange_grid(self.column_count)
+
+    def calculate_column_count(self):
+        window_width = self.scroll_widget.width()
+        item_width = self.zoom_level + 50  # or self.zoom_level + some padding
+        return max(1, window_width // item_width)
 
     def rearrange_grid(self, column_count):
-        # Temporary storage for widgets
-        temp_widgets = []
-        for i in range(self.grid_layout.count()):
-            widget = self.grid_layout.itemAt(i).widget()
-            temp_widgets.append((widget, self.grid_layout.getItemPosition(i)))
-
         # Clear the layout
         for i in reversed(range(self.grid_layout.count())):
-            self.grid_layout.itemAt(i).widget().setParent(None)
+            widget = self.grid_layout.itemAt(i).widget()
+            self.grid_layout.removeWidget(widget)
+            widget.setParent(None)
 
-        # Re-add widgets in the correct order
+        # Re-add widgets in the new order
         row = column = 0
-        for widget, _ in sorted(temp_widgets, key=lambda x: x[1]):
+        for widget in self.page_items:
             self.grid_layout.addWidget(widget, row, column)
             column += 1
             if column >= column_count:
                 column = 0
                 row += 1
+
+    def update_page_numbers(self):
+        for i, widget in enumerate(self.page_items):
+            widget.update_page_number(i + 1)
 
     def clear_grid(self):
         # Clear the grid layout
