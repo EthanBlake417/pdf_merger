@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton
 from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
@@ -14,21 +14,22 @@ class PdfPageItem(QWidget):
         super().__init__()
         layout = QHBoxLayout()
 
-        self.checkbox = QCheckBox()
+        self.checkbox = QCheckBox(f"Page {page_number + 1}")
         layout.addWidget(self.checkbox)
 
-        label = QLabel()
-        pixmap = QPixmap.fromImage(image)
-        label.setPixmap(pixmap.scaled(400, 400, Qt.KeepAspectRatio))
-        layout.addWidget(label)
-
-        page_label = QLabel(f"Page {page_number + 1}")
-        layout.addWidget(page_label)
+        self.label = QLabel()
+        self.pixmap = QPixmap.fromImage(image)
+        self.label.setPixmap(self.pixmap.scaled(200, 200, Qt.KeepAspectRatio))
+        layout.addWidget(self.label)
 
         self.setLayout(layout)
 
+    def set_image_size(self, size):
+        self.label.setPixmap(self.pixmap.scaled(size, size, Qt.KeepAspectRatio))
+
     def is_checked(self):
         return self.checkbox.isChecked()
+
 
 
 class MainWindow(QMainWindow):
@@ -49,8 +50,45 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.scroll_area)
         self.grid_layout = QGridLayout(self.scroll_widget)
 
+        # Zoom in Functionallity:
+        self.zoom_level = 200
+
+        self.zoom_in_button = QPushButton("Zoom In", self.central_widget)
+        self.zoom_in_button.clicked.connect(self.zoom_in)
+        self.layout.addWidget(self.zoom_in_button)
+
+        self.zoom_out_button = QPushButton("Zoom Out", self.central_widget)
+        self.zoom_out_button.clicked.connect(self.zoom_out)
+        self.layout.addWidget(self.zoom_out_button)
+
         # Enable drag and drop
         self.central_widget.setAcceptDrops(True)
+
+    def wheelEvent(self, event):
+        modifiers = QApplication.keyboardModifiers()
+        if modifiers == Qt.ControlModifier:
+            delta = event.angleDelta().y()
+            if delta > 0:
+                self.zoom_in()
+            elif delta < 0:
+                self.zoom_out()
+
+    def zoom_in(self):
+        self.zoom_level += 20
+        self.update_thumbnails()
+        self.update_grid_layout()
+
+    def zoom_out(self):
+        if self.zoom_level > 20:
+            self.zoom_level -= 20
+            self.update_thumbnails()
+            self.update_grid_layout()
+
+    def update_thumbnails(self):
+        for i in range(self.grid_layout.count()):
+            widget = self.grid_layout.itemAt(i).widget()
+            if isinstance(widget, PdfPageItem):
+                widget.set_image_size(self.zoom_level)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -81,6 +119,37 @@ class MainWindow(QMainWindow):
                 row += 1
 
         doc.close()
+        self.update_grid_layout()
+
+    def resizeEvent(self, event):
+        QMainWindow.resizeEvent(self, event)
+        self.update_grid_layout()
+
+    def update_grid_layout(self):
+        window_width = self.scroll_widget.width()
+        # Determine the number of columns based on window width and zoom level
+        column_count = max(1, window_width // (self.zoom_level + 20))  # Adjust 20 for padding/margins
+        self.rearrange_grid(column_count)
+
+    def rearrange_grid(self, column_count):
+        # Temporary storage for widgets
+        temp_widgets = []
+        for i in range(self.grid_layout.count()):
+            widget = self.grid_layout.itemAt(i).widget()
+            temp_widgets.append((widget, self.grid_layout.getItemPosition(i)))
+
+        # Clear the layout
+        for i in reversed(range(self.grid_layout.count())):
+            self.grid_layout.itemAt(i).widget().setParent(None)
+
+        # Re-add widgets in the correct order
+        row = column = 0
+        for widget, _ in sorted(temp_widgets, key=lambda x: x[1]):
+            self.grid_layout.addWidget(widget, row, column)
+            column += 1
+            if column >= column_count:
+                column = 0
+                row += 1
 
     def clear_grid(self):
         # Clear the grid layout
