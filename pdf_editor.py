@@ -66,7 +66,7 @@ class MainWindow(QMainWindow):
         self.page_items = []
         self.column_count = 3  # You can adjust this as needed
 
-        self.setWindowTitle("PDF Merger")
+        self.setWindowTitle("Pdf Editor")
         self.resize(1200, 800)
 
         # Central widget setup
