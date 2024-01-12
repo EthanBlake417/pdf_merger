@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog, QLineEdit
 from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
@@ -73,9 +73,11 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidget(self.scroll_widget)
 
         self.layout = QVBoxLayout(self.central_widget)
-        self.add_buttons()
+        self.add_top_widgets()
 
         self.layout.addWidget(self.scroll_area)
+        self.add_bottom_widgets()
+
 
         self.grid_layout = QGridLayout(self.scroll_widget)
 
@@ -86,7 +88,7 @@ class MainWindow(QMainWindow):
         self.central_widget.setAcceptDrops(True)
         self.setAcceptDrops(True)
 
-    def add_buttons(self):
+    def add_top_widgets(self):
         # Create a horizontal layout for buttons
         self.buttons_layout = QHBoxLayout()
 
@@ -128,6 +130,58 @@ class MainWindow(QMainWindow):
 
         # Add the buttons layout to the top of the main layout
         self.layout.addLayout(self.buttons_layout)
+
+
+    def add_bottom_widgets(self):
+        # Create a layout for output file settings
+        self.output_file_layout = QHBoxLayout()
+
+        self.output_label = QLabel("Output PDF:")
+        self.output_file_layout.addWidget(self.output_label)
+
+        self.output_line_edit = QLineEdit()
+        self.output_line_edit.setPlaceholderText("Enter output file name here...")
+        self.output_file_layout.addWidget(self.output_line_edit)
+
+        self.choose_file_button = QPushButton("Choose File")
+        self.choose_file_button.clicked.connect(self.choose_output_file)
+        self.output_file_layout.addWidget(self.choose_file_button)
+
+        self.open_pdf_checkbox = QCheckBox("Open PDF after creation")
+        self.output_file_layout.addWidget(self.open_pdf_checkbox)
+
+        # Add the output file layout to the main layout
+        self.layout.addLayout(self.output_file_layout)
+
+        # Create a layout for the create buttons
+        self.create_buttons_layout = QHBoxLayout()
+
+        self.create_selected_button = QPushButton("Create From Selected Pages")
+        self.create_selected_button.clicked.connect(self.create_from_selected_pages)
+        self.create_buttons_layout.addWidget(self.create_selected_button)
+
+        self.create_all_button = QPushButton("Create All Pages")
+        self.create_all_button.clicked.connect(self.create_all_pages)
+        self.create_buttons_layout.addWidget(self.create_all_button)
+
+        # Add the create buttons layout to the main layout
+        self.layout.addLayout(self.create_buttons_layout)
+
+    # Slot functions for the create buttons
+    def create_from_selected_pages(self):
+        pass
+        # Logic to create PDF from selected pages
+
+    def create_all_pages(self):
+        pass
+        # Logic to create PDF from all pages
+
+    def choose_output_file(self):
+        file_name, _ = QFileDialog.getSaveFileName(self, "Choose output file", "", "PDF Files (*.pdf)")
+        if file_name:
+            if not file_name.endswith('.pdf'):
+                file_name += '.pdf'
+            self.output_line_edit.setText(file_name)
 
     def add_files(self):
         file_dialog = QFileDialog(self)
