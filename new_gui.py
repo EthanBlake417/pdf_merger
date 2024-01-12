@@ -21,7 +21,7 @@ class PdfPageItem(QWidget):
 
         self.label = QLabel()
         self.pixmap = QPixmap.fromImage(image)
-        self.label.setPixmap(self.pixmap.scaled(200, 200, Qt.KeepAspectRatio))
+        # self.label.setPixmap(self.pixmap.scaled(200, 200, Qt.KeepAspectRatio))
         layout.addWidget(self.label)
 
         self.setLayout(layout)
@@ -43,8 +43,7 @@ class PdfPageItem(QWidget):
     def mouseMoveEvent(self, event):
         if not (event.buttons() & Qt.LeftButton):
             return
-        # if self.drag_start_position is None:  # Check if drag_start_position is set
-        #     return
+
         if (event.position().toPoint() - self.drag_start_position).manhattanLength() < QApplication.startDragDistance():
             return
 
@@ -78,7 +77,7 @@ class MainWindow(QMainWindow):
         self.grid_layout = QGridLayout(self.scroll_widget)
 
         # Zoom in Functionallity:
-        self.zoom_level = 200
+        self.zoom_level = 400
 
         self.zoom_in_button = QPushButton("Zoom In", self.central_widget)
         self.zoom_in_button.clicked.connect(self.zoom_in)
@@ -184,8 +183,11 @@ class MainWindow(QMainWindow):
             item_widget = PdfPageItem(current_count + page_num + 1, image)
             self.page_items.append(item_widget)
             self.grid_layout.addWidget(item_widget, (current_count + page_num) // self.column_count, (current_count + page_num) % self.column_count)
+            # Set the image size according to the current zoom level
+            item_widget.set_image_size(self.zoom_level)
         doc.close()
         self.update_page_numbers()
+        self.update_grid_layout()
 
     def resizeEvent(self, event):
         QMainWindow.resizeEvent(self, event)
@@ -222,13 +224,6 @@ class MainWindow(QMainWindow):
     def update_page_numbers(self):
         for i, widget in enumerate(self.page_items):
             widget.update_page_number(i + 1)
-
-    def clear_grid(self):
-        # Clear the grid layout
-        for i in reversed(range(self.grid_layout.count())):
-            widget_to_remove = self.grid_layout.itemAt(i).widget()
-            self.grid_layout.removeWidget(widget_to_remove)
-            widget_to_remove.setParent(None)
 
 
 if __name__ == "__main__":
