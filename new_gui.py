@@ -1,5 +1,5 @@
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog
 from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
@@ -73,23 +73,100 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidget(self.scroll_widget)
 
         self.layout = QVBoxLayout(self.central_widget)
+        self.add_buttons()
+
         self.layout.addWidget(self.scroll_area)
+
         self.grid_layout = QGridLayout(self.scroll_widget)
 
         # Zoom in Functionallity:
         self.zoom_level = 400
 
-        self.zoom_in_button = QPushButton("Zoom In", self.central_widget)
-        self.zoom_in_button.clicked.connect(self.zoom_in)
-        self.layout.addWidget(self.zoom_in_button)
-
-        self.zoom_out_button = QPushButton("Zoom Out", self.central_widget)
-        self.zoom_out_button.clicked.connect(self.zoom_out)
-        self.layout.addWidget(self.zoom_out_button)
-
         # Enable drag and drop
         self.central_widget.setAcceptDrops(True)
         self.setAcceptDrops(True)
+
+    def add_buttons(self):
+        # Create a horizontal layout for buttons
+        self.buttons_layout = QHBoxLayout()
+
+        # Add 'Add Files' button
+        self.add_files_button = QPushButton("Add Files", self.central_widget)
+        self.add_files_button.clicked.connect(self.add_files)
+        self.buttons_layout.addWidget(self.add_files_button)
+
+        # Add 'Add Folder' button
+        self.add_folder_button = QPushButton("Add Folder", self.central_widget)
+        self.add_folder_button.clicked.connect(self.add_folder)
+        self.buttons_layout.addWidget(self.add_folder_button)
+
+        # Add buttons to the horizontal layout
+        self.remove_selected_button = QPushButton("Remove Selected Pages", self.central_widget)
+        self.remove_selected_button.clicked.connect(self.remove_selected_pages)
+        self.buttons_layout.addWidget(self.remove_selected_button)
+
+        self.clear_button = QPushButton("Clear", self.central_widget)
+        self.clear_button.clicked.connect(self.clear_pages)
+        self.buttons_layout.addWidget(self.clear_button)
+
+        self.select_all_button = QPushButton("Select All", self.central_widget)
+        self.select_all_button.clicked.connect(self.select_all_pages)
+        self.buttons_layout.addWidget(self.select_all_button)
+
+        # Add Deselect All button
+        self.deselect_all_button = QPushButton("Deselect All", self.central_widget)
+        self.deselect_all_button.clicked.connect(self.deselect_all_pages)
+        self.buttons_layout.addWidget(self.deselect_all_button)
+
+        self.zoom_in_button = QPushButton("Zoom In", self.central_widget)
+        self.zoom_in_button.clicked.connect(self.zoom_in)
+        self.buttons_layout.addWidget(self.zoom_in_button)
+
+        self.zoom_out_button = QPushButton("Zoom Out", self.central_widget)
+        self.zoom_out_button.clicked.connect(self.zoom_out)
+        self.buttons_layout.addWidget(self.zoom_out_button)
+
+        # Add the buttons layout to the top of the main layout
+        self.layout.addLayout(self.buttons_layout)
+
+    def add_files(self):
+        file_dialog = QFileDialog(self)
+        file_dialog.setFileMode(QFileDialog.ExistingFiles)
+        file_dialog.setNameFilter("PDF Files (*.pdf)")
+        if file_dialog.exec():
+            file_names = file_dialog.selectedFiles()
+            for file_name in file_names:
+                self.load_pdf(file_name)
+
+    def add_folder(self):
+        folder_path = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if folder_path:
+            self.load_pdfs_from_folder(folder_path)
+
+    def load_pdfs_from_folder(self, folder_path):
+        # Assuming you're using os.listdir, adjust if using a different method
+        import os
+        for file_name in os.listdir(folder_path):
+            if file_name.lower().endswith('.pdf'):
+                full_path = os.path.join(folder_path, file_name)
+                self.load_pdf(full_path)
+
+    def deselect_all_pages(self):
+        for item in self.page_items:
+            item.checkbox.setChecked(False)
+
+    def remove_selected_pages(self):
+        self.page_items = [item for item in self.page_items if not item.is_checked()]
+        self.rearrange_grid(self.column_count)
+        self.update_page_numbers()
+
+    def clear_pages(self):
+        self.page_items.clear()
+        self.rearrange_grid(self.column_count)
+
+    def select_all_pages(self):
+        for item in self.page_items:
+            item.checkbox.setChecked(True)
 
     def dropEvent(self, event):
         mime = event.mimeData()
