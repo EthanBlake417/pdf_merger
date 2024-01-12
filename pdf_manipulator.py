@@ -18,7 +18,8 @@ class PdfPageItem(QWidget):
         self.original_pdf_path = original_pdf_path  # Store the path of the original PDF
 
         self.drag_start_position = None  # Initialize here
-        layout = QHBoxLayout()
+        # Using QVBoxLayout for vertical stacking of elements
+        layout = QVBoxLayout()
 
         self.checkbox = QCheckBox(f"Page {page_number + 1}")
         layout.addWidget(self.checkbox)
