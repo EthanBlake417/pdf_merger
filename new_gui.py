@@ -1,5 +1,7 @@
+import os
+import subprocess
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog, QLineEdit
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog, QLineEdit, QMessageBox
 from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
@@ -10,9 +12,11 @@ from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 
 
 class PdfPageItem(QWidget):
-    def __init__(self, page_number, image):
+    def __init__(self, page_number, image, original_pdf_path):
         super().__init__()
-        self.page_number = page_number  # Add this line
+        self.original_page_number = page_number
+        self.original_pdf_path = original_pdf_path  # Store the path of the original PDF
+
         self.drag_start_position = None  # Initialize here
         layout = QHBoxLayout()
 
@@ -78,7 +82,6 @@ class MainWindow(QMainWindow):
         self.layout.addWidget(self.scroll_area)
         self.add_bottom_widgets()
 
-
         self.grid_layout = QGridLayout(self.scroll_widget)
 
         # Zoom in Functionallity:
@@ -131,7 +134,6 @@ class MainWindow(QMainWindow):
         # Add the buttons layout to the top of the main layout
         self.layout.addLayout(self.buttons_layout)
 
-
     def add_bottom_widgets(self):
         # Create a layout for output file settings
         self.output_file_layout = QHBoxLayout()
@@ -149,7 +151,7 @@ class MainWindow(QMainWindow):
 
         self.open_pdf_checkbox = QCheckBox("Open PDF after creation")
         self.output_file_layout.addWidget(self.open_pdf_checkbox)
-
+        self.open_pdf_checkbox.setChecked(True)
         # Add the output file layout to the main layout
         self.layout.addLayout(self.output_file_layout)
 
@@ -168,13 +170,41 @@ class MainWindow(QMainWindow):
         self.layout.addLayout(self.create_buttons_layout)
 
     # Slot functions for the create buttons
+    def create_pdf(self, selected_only):
+        output_file = self.output_line_edit.text()
+        if not output_file:
+            QMessageBox.warning(self, "Error", "Please specify an output file name.")
+            return
+
+        new_pdf = fitz.open()  # Create a new empty PDF
+        for item in self.page_items:
+            if selected_only and not item.is_checked():
+                continue
+
+            original_pdf_path, original_page_number = item.original_pdf_path, item.original_page_number
+            original_pdf = fitz.open(original_pdf_path)
+            new_pdf.insert_pdf(original_pdf, from_page=original_page_number - 1, to_page=original_page_number - 1)
+            original_pdf.close()
+
+        new_pdf.save(output_file)
+        new_pdf.close()
+
+        if self.open_pdf_checkbox.isChecked():
+            self.open_pdf(output_file)
+
     def create_from_selected_pages(self):
-        pass
-        # Logic to create PDF from selected pages
+        self.create_pdf(selected_only=True)
 
     def create_all_pages(self):
-        pass
-        # Logic to create PDF from all pages
+        self.create_pdf(selected_only=False)
+
+    def open_pdf(self, file_path):
+        if sys.platform == "win32":
+            os.startfile(file_path)
+        elif sys.platform == "darwin":  # macOS
+            subprocess.run(["open", file_path])
+        else:  # Linux
+            subprocess.run(["xdg-open", file_path])
 
     def choose_output_file(self):
         file_name, _ = QFileDialog.getSaveFileName(self, "Choose output file", "", "PDF Files (*.pdf)")
@@ -232,19 +262,30 @@ class MainWindow(QMainWindow):
             source_index = int(mime.text())
             target_widget_pos = event.position().toPoint()
             target_widget = self.childAt(target_widget_pos)
+
             if target_widget and isinstance(target_widget, PdfPageItem):
                 target_index = self.page_items.index(target_widget)
-            else:
-                # Find the nearest widget to determine the drop position
-                target_index = self.find_nearest_widget_index(event.position().toPoint())
+                if target_index != source_index:
+                    # Swap the items in self.page_items list
+                    self.page_items[source_index], self.page_items[target_index] = \
+                        self.page_items[target_index], self.page_items[source_index]
 
-            if target_index is not None:
-                self.page_items.insert(target_index, self.page_items.pop(source_index))
-
-                self.rearrange_grid(self.column_count)
-                self.update_page_numbers()
+                    # Rebuild the grid layout with the new order
+                    self.rearrange_grid(self.column_count)
+                    self.update_page_numbers()
+                    self.update_page_items_order()  # Update the order of self.page_items
 
         event.acceptProposedAction()
+
+    def update_page_items_order(self):
+        # Update the order of self.page_items to match the current grid layout
+        ordered_items = []
+        for row in range(self.grid_layout.rowCount()):
+            for column in range(self.grid_layout.columnCount()):
+                widget = self.grid_layout.itemAtPosition(row, column)
+                if widget is not None and isinstance(widget.widget(), PdfPageItem):
+                    ordered_items.append(widget.widget())
+        self.page_items = ordered_items
 
     def find_nearest_widget_index(self, position):
         min_distance = float('inf')
@@ -311,7 +352,7 @@ class MainWindow(QMainWindow):
             pix = page.get_pixmap()
             image = QImage(pix.samples, pix.width, pix.height, QImage.Format_RGB888)
 
-            item_widget = PdfPageItem(current_count + page_num + 1, image)
+            item_widget = PdfPageItem(current_count + page_num + 1, image, pdf_path)
             self.page_items.append(item_widget)
             self.grid_layout.addWidget(item_widget, (current_count + page_num) // self.column_count, (current_count + page_num) % self.column_count)
             # Set the image size according to the current zoom level
@@ -339,9 +380,7 @@ class MainWindow(QMainWindow):
     def rearrange_grid(self, column_count):
         # Clear the layout
         for i in reversed(range(self.grid_layout.count())):
-            widget = self.grid_layout.itemAt(i).widget()
-            self.grid_layout.removeWidget(widget)
-            widget.setParent(None)
+            self.grid_layout.itemAt(i).widget().setParent(None)
 
         # Re-add widgets in the new order
         row = column = 0
