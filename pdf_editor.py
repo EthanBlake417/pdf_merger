@@ -181,17 +181,18 @@ class MainWindow(QMainWindow):
         for item in self.page_items:
             if selected_only and not item.is_checked():
                 continue
-            print(item)
             original_pdf_path, original_page_number = item.original_pdf_path, item.original_page_number
             original_pdf = fitz.open(original_pdf_path)
             new_pdf.insert_pdf(original_pdf, from_page=original_page_number - 1, to_page=original_page_number - 1)
             original_pdf.close()
+        try:
+            new_pdf.save(output_file)
+            new_pdf.close()
 
-        new_pdf.save(output_file)
-        new_pdf.close()
-
-        if self.open_pdf_checkbox.isChecked():
-            self.open_pdf(output_file)
+            if self.open_pdf_checkbox.isChecked():
+                self.open_pdf(output_file)
+        except ValueError:
+            QMessageBox.warning(self, "Error", "Cannot save with zero pages.")
 
     def create_from_selected_pages(self):
         self.create_pdf(selected_only=True)
@@ -272,7 +273,6 @@ class MainWindow(QMainWindow):
             if target_widget and isinstance(target_widget, PdfPageItem):
                 target_index = self.page_items.index(target_widget)
                 if target_index != source_index:
-                    print(target_index, source_index)
                     # Swap the items in self.page_items list
                     moved_item = self.page_items.pop(source_index)
                     self.page_items.insert(target_index, moved_item)
@@ -375,7 +375,6 @@ class MainWindow(QMainWindow):
 
     def rearrange_grid(self, column_count):
         # Clear the layout
-        print("clearing Layout")
         for i in reversed(range(self.grid_layout.count())):
             self.grid_layout.itemAt(i).widget().setParent(None)
 
@@ -387,7 +386,6 @@ class MainWindow(QMainWindow):
             if column >= column_count:
                 column = 0
                 row += 1
-        print(self.page_items)
 
     def update_page_numbers(self):
         for i, widget in enumerate(self.page_items):
