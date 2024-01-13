@@ -6,7 +6,7 @@ from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
 from PySide6.QtWidgets import QListWidgetItem, QWidget, QHBoxLayout, QLabel, QCheckBox
-from PySide6.QtGui import QPixmap, QImage, QDrag
+from PySide6.QtGui import QPixmap, QImage, QDrag, QAction
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 
@@ -42,6 +42,9 @@ class PdfPageItem(QWidget):
         self.checkbox.setText(f"Page {new_number}")
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton and QApplication.keyboardModifiers() == Qt.ControlModifier:
+            self.checkbox.setChecked(not self.checkbox.isChecked())
+        super().mousePressEvent(event)  # Call the parent class's mousePressEvent method
         if event.button() == Qt.LeftButton:
             self.drag_start_position = event.position().toPoint()
 
@@ -91,6 +94,32 @@ class MainWindow(QMainWindow):
         # Enable drag and drop
         self.central_widget.setAcceptDrops(True)
         self.setAcceptDrops(True)
+
+        # Add menu bar
+        self.create_menu_bar()
+
+    def create_menu_bar(self):
+        # Create a menu bar
+        menu_bar = self.menuBar()
+
+        # File Menu
+        file_menu = menu_bar.addMenu("&File")
+
+        # Exit Action
+        exit_action = QAction("&Exit", self)
+        exit_action.setShortcut("Ctrl+Q")
+        exit_action.triggered.connect(self.close)  # Connect to the close method of the window
+        file_menu.addAction(exit_action)
+
+        # Help Section
+        help_menu = menu_bar.addMenu("&Help")
+        help_action = QAction("&Usage", self)
+        help_action.triggered.connect(self.show_help_message)
+        help_menu.addAction(help_action)
+
+    def show_help_message(self):
+        message = "Press Ctrl and click on a page to select its checkbox."
+        QMessageBox.information(self, "How to Use", message)
 
     def add_top_widgets(self):
         # Create a horizontal layout for buttons
