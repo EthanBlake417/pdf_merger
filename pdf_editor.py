@@ -66,6 +66,7 @@ class PdfPageItem(QWidget):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.counter = 0
         self.page_items = []
         self.column_count = 3  # You can adjust this as needed
 
@@ -97,6 +98,16 @@ class MainWindow(QMainWindow):
 
         # Add menu bar
         self.create_menu_bar()
+        self.delete_pdf_files("temp_files")
+
+    def delete_pdf_files(self, folder_path):
+        for filename in os.listdir(folder_path):
+            if filename.lower().endswith('.pdf'):
+                file_path = os.path.join(folder_path, filename)
+                try:
+                    os.remove(file_path)
+                except Exception as e:
+                    print(f"Failed to delete {file_path}. Reason: {e}")
 
     def create_menu_bar(self):
         # Create a menu bar
@@ -251,7 +262,7 @@ class MainWindow(QMainWindow):
         if file_dialog.exec():
             file_names = file_dialog.selectedFiles()
             for file_name in file_names:
-                self.load_pdf(file_name)
+                self.load_pdf_or_image(file_name)
 
     def add_folder(self):
         folder_path = QFileDialog.getExistingDirectory(self, "Select Folder")
@@ -264,7 +275,7 @@ class MainWindow(QMainWindow):
         for file_name in os.listdir(folder_path):
             if file_name.lower().endswith('.pdf'):
                 full_path = os.path.join(folder_path, file_name)
-                self.load_pdf(full_path)
+                self.load_pdf_or_image(full_path)
 
     def deselect_all_pages(self):
         for item in self.page_items:
@@ -293,8 +304,8 @@ class MainWindow(QMainWindow):
         mime = event.mimeData()
         if mime.hasUrls():  # Handling file drop
             for url in mime.urls():
-                if url.isLocalFile() and url.fileName().endswith('.pdf'):
-                    self.load_pdf(url.toLocalFile())
+                if url.isLocalFile():
+                    self.load_pdf_or_image(url.toLocalFile())
         elif mime.hasText():  # Handling internal widget drop
             source_index = int(mime.text())
             target_widget_pos = event.position().toPoint()
@@ -368,6 +379,36 @@ class MainWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
+
+    def load_pdf_or_image(self, file_path):
+        if file_path.lower().endswith('.pdf'):
+            self.load_pdf(file_path)
+        else:
+            self.load_image_as_pdf(file_path)
+
+    def load_image_as_pdf(self, image_path):
+        try:
+            self.counter += 1
+            # Create a new PDF document
+            pdf_doc = fitz.open()
+
+            # Create a new page with dimensions based on the image size
+            img = fitz.open(image_path)  # Open the image as a document
+            rect = img[0].rect  # The dimensions of the image
+            pdf_page = pdf_doc.new_page(width=rect.width, height=rect.height)
+
+            # Insert the image into the new page
+            pdf_page.insert_image(rect, filename=image_path)
+
+            # Save the PDF to a temporary file or in memory
+            temp_pdf = f"temp_files/{self.counter}.pdf"  # Consider using a more robust temp file approach
+            pdf_doc.save(temp_pdf)
+            pdf_doc.close()
+
+            # Now load this temporary PDF as usual
+            self.load_pdf(temp_pdf)  # Pass original image path for reference
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"{e}")
 
     def load_pdf(self, pdf_path):
         doc = fitz.open(pdf_path)
