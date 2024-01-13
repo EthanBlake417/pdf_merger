@@ -12,13 +12,13 @@ from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 
 
 class PdfPageItem(QWidget):
-    def __init__(self, page_number, image, original_pdf_path):
+    def __init__(self, page_number, image, original_pdf_path, original_page_number):
         super().__init__()
-        self.original_page_number = page_number
+        self.original_page_number = original_page_number  # Store the original page number
         self.original_pdf_path = original_pdf_path  # Store the path of the original PDF
+        self.page_number = page_number  # This
 
         self.drag_start_position = None  # Initialize here
-        # Using QVBoxLayout for vertical stacking of elements
         layout = QVBoxLayout()
 
         self.checkbox = QCheckBox(f"Page {page_number + 1}")
@@ -181,7 +181,7 @@ class MainWindow(QMainWindow):
         for item in self.page_items:
             if selected_only and not item.is_checked():
                 continue
-
+            print(item)
             original_pdf_path, original_page_number = item.original_pdf_path, item.original_page_number
             original_pdf = fitz.open(original_pdf_path)
             new_pdf.insert_pdf(original_pdf, from_page=original_page_number - 1, to_page=original_page_number - 1)
@@ -253,6 +253,12 @@ class MainWindow(QMainWindow):
         for item in self.page_items:
             item.checkbox.setChecked(True)
 
+    def find_pdf_page_item_at(self, position):
+        for child in self.central_widget.findChildren(PdfPageItem):
+            if child.geometry().contains(position):
+                return child
+        return None
+
     def dropEvent(self, event):
         mime = event.mimeData()
         if mime.hasUrls():  # Handling file drop
@@ -262,31 +268,20 @@ class MainWindow(QMainWindow):
         elif mime.hasText():  # Handling internal widget drop
             source_index = int(mime.text())
             target_widget_pos = event.position().toPoint()
-            target_widget = self.childAt(target_widget_pos)
-
+            target_widget = self.find_pdf_page_item_at(target_widget_pos)
             if target_widget and isinstance(target_widget, PdfPageItem):
                 target_index = self.page_items.index(target_widget)
                 if target_index != source_index:
+                    print(target_index, source_index)
                     # Swap the items in self.page_items list
-                    self.page_items[source_index], self.page_items[target_index] = \
-                        self.page_items[target_index], self.page_items[source_index]
+                    moved_item = self.page_items.pop(source_index)
+                    self.page_items.insert(target_index, moved_item)
 
                     # Rebuild the grid layout with the new order
                     self.rearrange_grid(self.column_count)
                     self.update_page_numbers()
-                    self.update_page_items_order()  # Update the order of self.page_items
 
         event.acceptProposedAction()
-
-    def update_page_items_order(self):
-        # Update the order of self.page_items to match the current grid layout
-        ordered_items = []
-        for row in range(self.grid_layout.rowCount()):
-            for column in range(self.grid_layout.columnCount()):
-                widget = self.grid_layout.itemAtPosition(row, column)
-                if widget is not None and isinstance(widget.widget(), PdfPageItem):
-                    ordered_items.append(widget.widget())
-        self.page_items = ordered_items
 
     def find_nearest_widget_index(self, position):
         min_distance = float('inf')
@@ -353,7 +348,7 @@ class MainWindow(QMainWindow):
             pix = page.get_pixmap()
             image = QImage(pix.samples, pix.width, pix.height, QImage.Format_RGB888)
 
-            item_widget = PdfPageItem(current_count + page_num + 1, image, pdf_path)
+            item_widget = PdfPageItem(current_count + page_num + 1, image, pdf_path, page_num + 1)
             self.page_items.append(item_widget)
             self.grid_layout.addWidget(item_widget, (current_count + page_num) // self.column_count, (current_count + page_num) % self.column_count)
             # Set the image size according to the current zoom level
@@ -380,6 +375,7 @@ class MainWindow(QMainWindow):
 
     def rearrange_grid(self, column_count):
         # Clear the layout
+        print("clearing Layout")
         for i in reversed(range(self.grid_layout.count())):
             self.grid_layout.itemAt(i).widget().setParent(None)
 
@@ -391,6 +387,7 @@ class MainWindow(QMainWindow):
             if column >= column_count:
                 column = 0
                 row += 1
+        print(self.page_items)
 
     def update_page_numbers(self):
         for i, widget in enumerate(self.page_items):
