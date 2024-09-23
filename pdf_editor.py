@@ -9,7 +9,9 @@ from PySide6.QtWidgets import QListWidgetItem, QWidget, QHBoxLayout, QLabel, QCh
 from PySide6.QtGui import QPixmap, QImage, QDrag, QAction
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
-
+import logging
+import psutil
+logging.basicConfig(filename='pdf_editor.log', level=logging.DEBUG)
 
 class PdfPageItem(QWidget):
     def __init__(self, page_number, image, original_pdf_path, original_page_number):
@@ -411,21 +413,121 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Error", f"{e}")
 
     def load_pdf(self, pdf_path):
-        doc = fitz.open(pdf_path)
-        current_count = len(self.page_items)
-        for page_num in range(len(doc)):
-            page = doc.load_page(page_num)
-            pix = page.get_pixmap()
-            image = QImage(pix.samples, pix.width, pix.height, QImage.Format_RGB888)
+        logging.info(f"Attempting to load PDF: {pdf_path}")
+        print(f"Attempting to load PDF: {pdf_path}")
 
-            item_widget = PdfPageItem(current_count + page_num + 1, image, pdf_path, page_num + 1)
-            self.page_items.append(item_widget)
-            self.grid_layout.addWidget(item_widget, (current_count + page_num) // self.column_count, (current_count + page_num) % self.column_count)
-            # Set the image size according to the current zoom level
-            item_widget.set_image_size(self.zoom_level)
-        doc.close()
-        self.update_page_numbers()
-        self.update_grid_layout()
+        # Check file size
+        file_size = os.path.getsize(pdf_path)
+        logging.debug(f"File size: {file_size / (1024 * 1024):.2f} MB")
+        print(f"File size: {file_size / (1024 * 1024):.2f} MB")
+        if file_size > 100_000_000:  # 100 MB limit, adjust as needed
+            logging.warning(f"File is too large: {file_size / (1024 * 1024):.2f} MB")
+            QMessageBox.warning(self, "Error", "File is too large to load")
+            return
+
+        try:
+            # Attempt to open the PDF
+            doc = fitz.open(pdf_path)
+            logging.info(f"Successfully opened {pdf_path}")
+            print(f"Successfully opened {pdf_path}")
+
+            # Log PDF information
+            logging.debug(f"Number of pages: {len(doc)}")
+            logging.debug(f"Metadata: {doc.metadata}")
+            logging.debug(f"Is encrypted: {doc.is_encrypted}")
+            logging.debug(f"Permissions: {doc.permissions}")
+            print(f"Number of pages: {len(doc)}")
+            print(f"Metadata: {doc.metadata}")
+            print(f"Is encrypted: {doc.is_encrypted}")
+            print(f"Permissions: {doc.permissions}")
+
+            # Check permissions
+            if doc.permissions <= 0:
+                logging.warning(f"Unusual permissions value ({doc.permissions}) for {pdf_path}")
+                print(f"Warning: Unusual permissions value ({doc.permissions}) for {pdf_path}")
+
+            current_count = len(self.page_items)
+            for page_num in range(len(doc)):
+                try:
+                    # Check available memory before loading each page
+                    available_memory = psutil.virtual_memory().available
+                    if available_memory < 100 * 1024 * 1024:  # 100 MB threshold
+                        logging.warning(f"Low memory warning: Only {available_memory / (1024 * 1024):.2f} MB available")
+                        print(f"Low memory warning: Only {available_memory / (1024 * 1024):.2f} MB available")
+                        QMessageBox.warning(self, "Low Memory", "Running low on memory. The application might become unstable.")
+
+                    # Load the page
+                    page = doc.load_page(page_num)
+                    logging.debug(f"Loaded page {page_num + 1}")
+                    print(f"Loaded page {page_num + 1}")
+
+                    # Create pixmap with error handling
+                    try:
+                        pix = page.get_pixmap(alpha=False)  # Disable alpha channel
+                        logging.debug(f"Created pixmap for page {page_num + 1}")
+                        print(f"Created pixmap for page {page_num + 1}")
+                    except Exception as e:
+                        logging.error(f"Error creating pixmap for page {page_num + 1}: {str(e)}")
+                        print(f"Error creating pixmap for page {page_num + 1}: {str(e)}")
+                        continue  # Skip this page and try the next one
+
+                    # Create QImage with error handling
+                    try:
+                        if pix.samples:
+                            image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888)
+                            if image.isNull():
+                                raise ValueError(f"Created QImage is null for page {page_num + 1}")
+                            logging.debug(f"Created QImage for page {page_num + 1}")
+                            print(f"Created QImage for page {page_num + 1}")
+                        else:
+                            raise ValueError(f"Pixmap samples are null for page {page_num + 1}")
+                    except Exception as e:
+                        logging.error(f"Error creating QImage for page {page_num + 1}: {str(e)}")
+                        print(f"Error creating QImage for page {page_num + 1}: {str(e)}")
+                        continue  # Skip this page and try the next one
+
+                    # Create and add widget
+                    try:
+                        item_widget = PdfPageItem(current_count + page_num + 1, image, pdf_path, page_num + 1)
+                        self.page_items.append(item_widget)
+                        self.grid_layout.addWidget(item_widget, (current_count + page_num) // self.column_count, (current_count + page_num) % self.column_count)
+                        item_widget.set_image_size(self.zoom_level)
+                        logging.debug(f"Added widget for page {page_num + 1}")
+                        print(f"Added widget for page {page_num + 1}")
+                    except Exception as e:
+                        logging.error(f"Error adding widget for page {page_num + 1}: {str(e)}")
+                        print(f"Error adding widget for page {page_num + 1}: {str(e)}")
+
+                except Exception as e:
+                    logging.error(f"Error processing page {page_num + 1} of {pdf_path}: {str(e)}")
+                    print(f"Error processing page {page_num + 1} of {pdf_path}: {str(e)}")
+                    QMessageBox.warning(self, "Error", f"Failed to process page {page_num + 1}: {str(e)}")
+
+            # Close the document
+            doc.close()
+            self.update_page_numbers()
+            self.update_grid_layout()
+            logging.info(f"Successfully loaded all pages from {pdf_path}")
+            print(f"Successfully loaded all pages from {pdf_path}")
+
+        except fitz.FileDataError as e:
+            logging.error(f"PyMuPDF FileDataError for {pdf_path}: {str(e)}")
+            print(f"PyMuPDF FileDataError for {pdf_path}: {str(e)}")
+            QMessageBox.warning(self, "Error", f"Failed to load PDF: {str(e)}")
+        except MemoryError:
+            logging.error(f"MemoryError while loading {pdf_path}")
+            print(f"MemoryError while loading {pdf_path}")
+            QMessageBox.warning(self, "Error", "Not enough memory to load this PDF")
+        except Exception as e:
+            logging.error(f"Unexpected error loading {pdf_path}: {str(e)}")
+            print(f"Unexpected error loading {pdf_path}: {str(e)}")
+            QMessageBox.warning(self, "Error", f"An unexpected error occurred: {str(e)}")
+
+        # Add a final check to see if any pages were successfully loaded
+        if not self.page_items:
+            logging.warning(f"No pages were successfully loaded from {pdf_path}")
+            print(f"No pages were successfully loaded from {pdf_path}")
+            QMessageBox.warning(self, "Warning", "No pages were successfully loaded from the PDF.")
 
     def resizeEvent(self, event):
         QMainWindow.resizeEvent(self, event)
