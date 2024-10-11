@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog, QLineEdit, QMessageBox
@@ -11,7 +12,16 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 import logging
 import psutil
-logging.basicConfig(filename='pdf_editor.log', level=logging.DEBUG)
+
+ENABLE_LOGGING = True
+if not os.path.exists("temp_files"):
+    os.makedirs("temp_files")
+
+if ENABLE_LOGGING:
+    logging.basicConfig(filename='pdf_editor.log', level=logging.DEBUG)
+else:
+    logging.basicConfig(handlers=[logging.NullHandler()])
+
 
 class PdfPageItem(QWidget):
     def __init__(self, page_number, image, original_pdf_path, original_page_number):
@@ -562,6 +572,19 @@ class MainWindow(QMainWindow):
     def update_page_numbers(self):
         for i, widget in enumerate(self.page_items):
             widget.update_page_number(i + 1)
+
+    def closeEvent(self, event):
+        """Override closeEvent to clean up temp files before closing."""
+        self.cleanup_temp_files()
+        super().closeEvent(event)
+
+    def cleanup_temp_files(self):
+        """Remove the temp_files directory and its contents."""
+        try:
+            shutil.rmtree("temp_files")
+            logging.info(f"Successfully removed temp files directory.")
+        except Exception as e:
+            logging.error(f"Failed to remove temp_files directory: {str(e)}")
 
 
 if __name__ == "__main__":
