@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 import logging
 import psutil
 
-ENABLE_LOGGING = True
+ENABLE_LOGGING = False
 if not os.path.exists("temp_files"):
     os.makedirs("temp_files")
 
