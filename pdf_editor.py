@@ -8,11 +8,13 @@ from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
 from PySide6.QtWidgets import QListWidgetItem, QWidget, QHBoxLayout, QLabel, QCheckBox
-from PySide6.QtGui import QPixmap, QImage, QDrag, QAction, QTransform, QPainter
+from PySide6.QtGui import QPixmap, QImage, QDrag, QAction, QTransform, QPainter, QIcon
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 import logging
 import psutil
+
+from help_menu import HelpMenu
 
 ENABLE_LOGGING = False
 if not os.path.exists("temp_files"):
@@ -147,6 +149,16 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Pdf Editor")
         self.resize(1200, 800)
 
+        # Set the window icon
+        icon_path = os.path.join(os.path.dirname(__file__), "pdf_editing_icon.webp")
+        self.setWindowIcon(QIcon(icon_path))
+
+        # Set the taskbar icon (for Windows)
+        if os.name == 'nt':
+            import ctypes
+            myappid = 'mycompany.pdfeditor.version1'  # arbitrary string
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
         # Central widget setup
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -184,23 +196,18 @@ class MainWindow(QMainWindow):
                     print(f"Failed to delete {file_path}. Reason: {e}")
 
     def create_menu_bar(self):
-        # Create a menu bar
         menu_bar = self.menuBar()
 
         # File Menu
         file_menu = menu_bar.addMenu("&File")
-
-        # Exit Action
-        exit_action = QAction("&Exit", self)
+        exit_action = QAction(QIcon(self.windowIcon()), "&Exit", self)
         exit_action.setShortcut("Ctrl+Q")
-        exit_action.triggered.connect(self.close)  # Connect to the close method of the window
+        exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-        # Help Section
-        help_menu = menu_bar.addMenu("&Help")
-        help_action = QAction("&Usage", self)
-        help_action.triggered.connect(self.show_help_message)
-        help_menu.addAction(help_action)
+        # Help Menu
+        help_menu = HelpMenu(self, self.windowIcon())
+        menu_bar.addMenu(help_menu)
 
     def show_help_message(self):
         message = "Press Ctrl and click on a page to select its checkbox."
@@ -417,7 +424,7 @@ class MainWindow(QMainWindow):
     def add_files(self):
         file_dialog = QFileDialog(self)
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        file_dialog.setNameFilter("PDF Files (*.pdf)")
+        file_dialog.setNameFilter("Supported Files (*.pdf *.png *.jpg *.jpeg *.tiff *.tif)")
         if file_dialog.exec():
             file_names = file_dialog.selectedFiles()
             for file_name in file_names:
@@ -432,7 +439,7 @@ class MainWindow(QMainWindow):
         # Assuming you're using os.listdir, adjust if using a different method
         import os
         for file_name in os.listdir(folder_path):
-            if file_name.lower().endswith('.pdf'):
+            if file_name.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif')):
                 full_path = os.path.join(folder_path, file_name)
                 self.load_pdf_or_image(full_path)
 
