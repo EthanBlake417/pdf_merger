@@ -2,12 +2,13 @@ import os
 import shutil
 import subprocess
 import sys
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog, QLineEdit, QMessageBox
+from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog, QLineEdit, QMessageBox, \
+    QDialog, QFormLayout, QComboBox, QDialogButtonBox
 from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
 from PySide6.QtWidgets import QListWidgetItem, QWidget, QHBoxLayout, QLabel, QCheckBox
-from PySide6.QtGui import QPixmap, QImage, QDrag, QAction, QTransform
+from PySide6.QtGui import QPixmap, QImage, QDrag, QAction, QTransform, QPainter
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 import logging
@@ -23,15 +24,35 @@ else:
     logging.basicConfig(handlers=[logging.NullHandler()])
 
 
+class NormalizeDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Normalize Options")
+        layout = QFormLayout(self)
+
+        self.method_combo = QComboBox()
+        self.method_combo.addItems(["Fit", "Fill", "Stretch"])
+        layout.addRow("Method:", self.method_combo)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+
 class PdfPageItem(QWidget):
     def __init__(self, page_number, image, original_pdf_path, original_page_number):
         super().__init__()
-        self.original_page_number = original_page_number  # Store the original page number
-        self.original_pdf_path = original_pdf_path  # Store the path of the original PDF
-        self.page_number = page_number  # This
-        self.rotation = 0  # Add rotation property
+        self.original_page_number = original_page_number
+        self.original_pdf_path = original_pdf_path
+        self.page_number = page_number
+        self.rotation = 0
+        self.normalized_size = None
+        self.normalization_method = None
+        self.original_image = image
+        self.current_image = image
 
-        self.drag_start_position = None  # Initialize here
+        self.drag_start_position = None
         layout = QVBoxLayout()
 
         self.checkbox = QCheckBox(f"Page {page_number + 1}")
@@ -39,14 +60,49 @@ class PdfPageItem(QWidget):
 
         self.label = QLabel()
         self.pixmap = QPixmap.fromImage(image)
-        # self.label.setPixmap(self.pixmap.scaled(200, 200, Qt.KeepAspectRatio))
         layout.addWidget(self.label)
 
         self.setLayout(layout)
 
     def set_image_size(self, size):
-        rotated_pixmap = self.pixmap.transformed(QTransform().rotate(self.rotation))
-        self.label.setPixmap(rotated_pixmap.scaled(size, size, Qt.KeepAspectRatio))
+        if self.normalized_size:
+            # Scale the image based on the normalization method
+            if self.normalization_method == "Fit":
+                scaled_pixmap = self.pixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            elif self.normalization_method == "Fill":
+                scaled_pixmap = self.pixmap.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            elif self.normalization_method == "Stretch":
+                scaled_pixmap = self.pixmap.scaled(size, int(size * (self.normalized_size[1] / self.normalized_size[0])), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+
+            # Create a new pixmap with the normalized aspect ratio
+            normalized_pixmap = QPixmap(size, int(size * (self.normalized_size[1] / self.normalized_size[0])))
+            normalized_pixmap.fill(Qt.white)
+
+            # Draw the scaled image centered on the normalized pixmap
+            painter = QPainter(normalized_pixmap)
+            painter.drawPixmap((normalized_pixmap.width() - scaled_pixmap.width()) // 2,
+                               (normalized_pixmap.height() - scaled_pixmap.height()) // 2,
+                               scaled_pixmap)
+            painter.end()
+
+            # Apply rotation if any
+            if self.rotation != 0:
+                normalized_pixmap = normalized_pixmap.transformed(QTransform().rotate(self.rotation))
+
+            self.label.setPixmap(normalized_pixmap)
+        else:
+            rotated_pixmap = self.pixmap.transformed(QTransform().rotate(self.rotation))
+            self.label.setPixmap(rotated_pixmap.scaled(size, size, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def set_normalized_size(self, size, method):
+        self.normalized_size = size
+        self.normalization_method = method
+        self.set_image_size(self.label.width())  # Refresh the display
+
+    def unnormalize(self):
+        self.normalized_size = None
+        self.normalization_method = None
+        self.set_image_size(self.label.width())  # Refresh the display
 
     def rotate(self):
         self.rotation = (self.rotation + 90) % 360
@@ -182,6 +238,20 @@ class MainWindow(QMainWindow):
         self.deselect_all_button.clicked.connect(self.deselect_all_pages)
         self.buttons_layout.addWidget(self.deselect_all_button)
 
+        # Add Rotate Selected Pages button
+        self.rotate_selected_button = QPushButton("Rotate Selected Pages", self.central_widget)
+        self.rotate_selected_button.clicked.connect(self.rotate_selected_pages)
+        self.buttons_layout.addWidget(self.rotate_selected_button)
+
+        # Add normalize selected pages button
+        self.normalize_selected_button = QPushButton("Normalize Selected Pages", self.central_widget)
+        self.normalize_selected_button.clicked.connect(self.normalize_selected_pages)
+        self.buttons_layout.addWidget(self.normalize_selected_button)
+
+        self.unnormalize_selected_button = QPushButton("Unnormalize Selected Pages", self.central_widget)
+        self.unnormalize_selected_button.clicked.connect(self.unnormalize_selected_pages)
+        self.buttons_layout.addWidget(self.unnormalize_selected_button)
+
         self.zoom_in_button = QPushButton("Zoom In", self.central_widget)
         self.zoom_in_button.clicked.connect(self.zoom_in)
         self.buttons_layout.addWidget(self.zoom_in_button)
@@ -189,11 +259,6 @@ class MainWindow(QMainWindow):
         self.zoom_out_button = QPushButton("Zoom Out", self.central_widget)
         self.zoom_out_button.clicked.connect(self.zoom_out)
         self.buttons_layout.addWidget(self.zoom_out_button)
-
-        # Add Rotate Selected Pages button
-        self.rotate_selected_button = QPushButton("Rotate Selected Pages", self.central_widget)
-        self.rotate_selected_button.clicked.connect(self.rotate_selected_pages)
-        self.buttons_layout.addWidget(self.rotate_selected_button)
 
         # Add the buttons layout to the top of the main layout
         self.layout.addLayout(self.buttons_layout)
@@ -242,6 +307,50 @@ class MainWindow(QMainWindow):
         # Add the create buttons layout to the main layout
         self.layout.addLayout(self.create_buttons_layout)
 
+    def normalize_selected_pages(self):
+        selected_items = [item for item in self.page_items if item.is_checked()]
+        if not selected_items:
+            QMessageBox.warning(self, "Error", "No pages selected for normalization.")
+            return
+
+        dialog = NormalizeDialog(self)
+        if dialog.exec():
+            method = dialog.method_combo.currentText()
+            target_size = self.get_target_page_size(selected_items)
+            if not target_size:
+                QMessageBox.warning(self, "Error", "Unable to determine target size for normalization.")
+                return
+
+            for item in selected_items:
+                item.set_normalized_size(target_size, method)
+
+            QMessageBox.information(self, "Success", f"Normalized {len(selected_items)} pages to size {target_size[0]}x{target_size[1]} using {method} method.")
+            self.update_grid_layout()  # Refresh the display
+
+    def unnormalize_selected_pages(self):
+        selected_items = [item for item in self.page_items if item.is_checked()]
+        if not selected_items:
+            QMessageBox.warning(self, "Error", "No pages selected for unnormalization.")
+            return
+
+        for item in selected_items:
+            item.unnormalize()
+
+        QMessageBox.information(self, "Success", f"Unnormalized {len(selected_items)} pages.")
+        self.update_grid_layout()  # Refresh the display
+
+    def get_target_page_size(self, items):
+        # This method determines the target page size for normalization
+        # Currently using the size of the first selected page
+        if items:
+            first_item = items[0]
+            doc = fitz.open(first_item.original_pdf_path)
+            page = doc[first_item.original_page_number - 1]
+            size = page.rect.width, page.rect.height
+            doc.close()
+            return size
+        return None
+
     def create_pdf(self, selected_only):
         output_file = self.output_line_edit.text()
         if not output_file:
@@ -249,6 +358,7 @@ class MainWindow(QMainWindow):
             return
 
         new_pdf = fitz.open()  # Create a new empty PDF
+
         for item in self.page_items:
             if selected_only and not item.is_checked():
                 continue
@@ -260,7 +370,18 @@ class MainWindow(QMainWindow):
             if item.rotation != 0:
                 page.set_rotation(item.rotation)
 
-            new_pdf.insert_pdf(original_pdf, from_page=original_page_number - 1, to_page=original_page_number - 1)
+            # Apply normalization if the page has been normalized
+            if item.normalized_size:
+                new_page = new_pdf.new_page(width=item.normalized_size[0], height=item.normalized_size[1])
+                if item.normalization_method == "Fit":
+                    new_page.show_pdf_page(new_page.rect, original_pdf, original_page_number - 1, keep_proportion=True)
+                elif item.normalization_method == "Fill":
+                    new_page.show_pdf_page(new_page.rect, original_pdf, original_page_number - 1, keep_proportion=True, overlay=True)
+                elif item.normalization_method == "Stretch":
+                    new_page.show_pdf_page(new_page.rect, original_pdf, original_page_number - 1, keep_proportion=False)
+            else:
+                new_pdf.insert_pdf(original_pdf, from_page=original_page_number - 1, to_page=original_page_number - 1)
+
             original_pdf.close()
 
         try:
@@ -575,6 +696,10 @@ class MainWindow(QMainWindow):
         # Determine the number of columns based on window width and zoom level
         self.column_count = self.calculate_column_count()
         self.rearrange_grid(self.column_count)
+
+        # Update the image size for all items
+        for item in self.page_items:
+            item.set_image_size(self.zoom_level)
 
     def calculate_column_count(self):
         window_width = self.scroll_widget.width()
