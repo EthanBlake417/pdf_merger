@@ -150,7 +150,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 800)
 
         # Set the window icon
-        icon_path = os.path.join(os.path.dirname(__file__), "icons/pdf_editing_icon.webp")
+        icon_path = os.path.join(os.path.dirname(__file__), "pdf_editing_icon.webp")
         self.setWindowIcon(QIcon(icon_path))
 
         # Set the taskbar icon (for Windows)
