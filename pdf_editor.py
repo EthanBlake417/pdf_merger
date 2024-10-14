@@ -7,7 +7,7 @@ from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
 from PySide6.QtWidgets import QListWidgetItem, QWidget, QHBoxLayout, QLabel, QCheckBox
-from PySide6.QtGui import QPixmap, QImage, QDrag, QAction
+from PySide6.QtGui import QPixmap, QImage, QDrag, QAction, QTransform
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 import logging
@@ -29,6 +29,7 @@ class PdfPageItem(QWidget):
         self.original_page_number = original_page_number  # Store the original page number
         self.original_pdf_path = original_pdf_path  # Store the path of the original PDF
         self.page_number = page_number  # This
+        self.rotation = 0  # Add rotation property
 
         self.drag_start_position = None  # Initialize here
         layout = QVBoxLayout()
@@ -44,7 +45,12 @@ class PdfPageItem(QWidget):
         self.setLayout(layout)
 
     def set_image_size(self, size):
-        self.label.setPixmap(self.pixmap.scaled(size, size, Qt.KeepAspectRatio))
+        rotated_pixmap = self.pixmap.transformed(QTransform().rotate(self.rotation))
+        self.label.setPixmap(rotated_pixmap.scaled(size, size, Qt.KeepAspectRatio))
+
+    def rotate(self):
+        self.rotation = (self.rotation + 90) % 360
+        self.set_image_size(self.label.width())  # Refresh the image with new rotation
 
     def is_checked(self):
         return self.checkbox.isChecked()
@@ -184,8 +190,22 @@ class MainWindow(QMainWindow):
         self.zoom_out_button.clicked.connect(self.zoom_out)
         self.buttons_layout.addWidget(self.zoom_out_button)
 
+        # Add Rotate Selected Pages button
+        self.rotate_selected_button = QPushButton("Rotate Selected Pages", self.central_widget)
+        self.rotate_selected_button.clicked.connect(self.rotate_selected_pages)
+        self.buttons_layout.addWidget(self.rotate_selected_button)
+
         # Add the buttons layout to the top of the main layout
         self.layout.addLayout(self.buttons_layout)
+
+    def rotate_selected_pages(self):
+        for item in self.page_items:
+            if item.is_checked():
+                item.rotate()
+        self.update_grid_layout()
+        # Hacky way to make sure that they don't appear too big visually
+        self.zoom_in()
+        self.zoom_out()
 
     def add_bottom_widgets(self):
         # Create a layout for output file settings
@@ -222,7 +242,6 @@ class MainWindow(QMainWindow):
         # Add the create buttons layout to the main layout
         self.layout.addLayout(self.create_buttons_layout)
 
-    # Slot functions for the create buttons
     def create_pdf(self, selected_only):
         output_file = self.output_line_edit.text()
         if not output_file:
@@ -235,8 +254,15 @@ class MainWindow(QMainWindow):
                 continue
             original_pdf_path, original_page_number = item.original_pdf_path, item.original_page_number
             original_pdf = fitz.open(original_pdf_path)
+            page = original_pdf[original_page_number - 1]
+
+            # Apply rotation
+            if item.rotation != 0:
+                page.set_rotation(item.rotation)
+
             new_pdf.insert_pdf(original_pdf, from_page=original_page_number - 1, to_page=original_page_number - 1)
             original_pdf.close()
+
         try:
             new_pdf.save(output_file)
             new_pdf.close()
