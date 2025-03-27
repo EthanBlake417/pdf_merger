@@ -69,7 +69,7 @@ class HelpMenu(QMenu):
                     </ul>
                 </li>
             </ol>
-            <p><strong>Supported file types:</strong> PDF (.pdf), PNG (.png), JPEG (.jpg, .jpeg), TIFF (.tiff, .tif)</p>
+            <p><strong>Supported file types:</strong> PDF (.pdf), PNG (.png), JPEG (.jpg, .jpeg), TIFF (.tiff, .tif), PowerPoint (.ppt, .pptx)</p>
         </body>
         </html>
         """
