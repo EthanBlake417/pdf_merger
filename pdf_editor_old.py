@@ -2,9 +2,8 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog, QLineEdit, QMessageBox, \
-    QDialog, QFormLayout, QComboBox, QDialogButtonBox, QHBoxLayout
+    QDialog, QFormLayout, QComboBox, QDialogButtonBox
 from PySide6.QtCore import Qt, QMimeData
 import fitz  # PyMuPDF
 
@@ -16,9 +15,6 @@ import logging
 import psutil
 
 from help_menu import HelpMenu
-
-# For PowerPoint support
-import platform
 
 ENABLE_LOGGING = False
 if not os.path.exists("temp_files"):
@@ -428,7 +424,7 @@ class MainWindow(QMainWindow):
     def add_files(self):
         file_dialog = QFileDialog(self)
         file_dialog.setFileMode(QFileDialog.ExistingFiles)
-        file_dialog.setNameFilter("Supported Files (*.pdf *.png *.jpg *.jpeg *.tiff *.tif *.pptx *.ppt)")
+        file_dialog.setNameFilter("Supported Files (*.pdf *.png *.jpg *.jpeg *.tiff *.tif)")
         if file_dialog.exec():
             file_names = file_dialog.selectedFiles()
             for file_name in file_names:
@@ -443,7 +439,7 @@ class MainWindow(QMainWindow):
         # Assuming you're using os.listdir, adjust if using a different method
         import os
         for file_name in os.listdir(folder_path):
-            if file_name.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.pptx', '.ppt')):
+            if file_name.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif')):
                 full_path = os.path.join(folder_path, file_name)
                 self.load_pdf_or_image(full_path)
 
@@ -551,152 +547,10 @@ class MainWindow(QMainWindow):
             event.ignore()
 
     def load_pdf_or_image(self, file_path):
-        lower_path = file_path.lower()
-        if lower_path.endswith('.pdf'):
+        if file_path.lower().endswith('.pdf'):
             self.load_pdf(file_path)
-        elif lower_path.endswith(('.pptx', '.ppt')):
-            self.load_powerpoint_as_pdf(file_path)
         else:
             self.load_image_as_pdf(file_path)
-
-    def load_powerpoint_as_pdf(self, ppt_path):
-        """Convert PowerPoint file to PDF and load it."""
-        try:
-            self.counter += 1
-            temp_pdf = f"temp_files/ppt_converted_{self.counter}.pdf"
-
-            # Attempt to convert PowerPoint to PDF
-            converted = False
-
-            # Windows-specific PowerPoint conversion using COM
-            if sys.platform == "win32":
-                try:
-                    import comtypes.client
-
-                    logging.info("Attempting to convert PowerPoint to PDF using COM interface")
-                    print("Converting PowerPoint to PDF using PowerPoint COM interface...")
-
-                    powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
-                    powerpoint.Visible = 1
-
-                    # Use absolute path
-                    abs_ppt_path = os.path.abspath(ppt_path)
-                    abs_pdf_path = os.path.abspath(temp_pdf)
-
-                    # Open the presentation
-                    presentation = powerpoint.Presentations.Open(abs_ppt_path)
-
-                    # 32 is the constant for PDF format
-                    presentation.SaveAs(abs_pdf_path, 32)
-                    presentation.Close()
-                    powerpoint.Quit()
-
-                    converted = True
-                    logging.info(f"Successfully converted {ppt_path} to PDF using COM")
-                    print(f"Successfully converted {ppt_path} to PDF using COM")
-                except Exception as e:
-                    logging.error(f"COM conversion failed: {str(e)}")
-                    print(f"COM conversion failed: {str(e)}")
-
-            # Try LibreOffice for all platforms as a fallback
-            if not converted:
-                try:
-                    # Find LibreOffice/OpenOffice executable
-                    soffice_path = self.find_libreoffice_path()
-
-                    if soffice_path:
-                        logging.info(f"Attempting to convert using LibreOffice/OpenOffice at {soffice_path}")
-                        print(f"Converting PowerPoint to PDF using {soffice_path}...")
-
-                        # Ensure temp directory exists
-                        temp_dir = os.path.dirname(temp_pdf)
-                        if not os.path.exists(temp_dir):
-                            os.makedirs(temp_dir)
-
-                        # Convert to PDF using LibreOffice headless mode
-                        cmd = [
-                            soffice_path,
-                            "--headless",
-                            "--convert-to", "pdf",
-                            "--outdir", temp_dir,
-                            ppt_path
-                        ]
-
-                        result = subprocess.run(cmd, check=True, capture_output=True)
-                        logging.debug(f"LibreOffice conversion output: {result.stdout.decode()}")
-
-                        # LibreOffice creates the PDF with the same name as the original file
-                        # but with .pdf extension in the output directory
-                        base_name = os.path.splitext(os.path.basename(ppt_path))[0]
-                        converted_pdf = os.path.join(temp_dir, f"{base_name}.pdf")
-
-                        # Rename to our expected temp file name if needed
-                        if converted_pdf != temp_pdf:
-                            if os.path.exists(converted_pdf):
-                                os.rename(converted_pdf, temp_pdf)
-                            else:
-                                logging.error(f"Expected converted file not found at {converted_pdf}")
-                                raise FileNotFoundError(f"Converted PDF not found at expected location: {converted_pdf}")
-
-                        converted = True
-                        logging.info(f"Successfully converted {ppt_path} to PDF using LibreOffice")
-                        print(f"Successfully converted {ppt_path} to PDF using LibreOffice")
-                    else:
-                        raise Exception("LibreOffice/OpenOffice not found")
-                except Exception as e:
-                    logging.error(f"LibreOffice conversion failed: {str(e)}")
-                    print(f"LibreOffice conversion failed: {str(e)}")
-
-            # If all conversion methods failed
-            if not converted:
-                error_msg = "Failed to convert PowerPoint to PDF. Please ensure Microsoft PowerPoint or LibreOffice/OpenOffice is installed."
-                logging.error(error_msg)
-                QMessageBox.warning(self, "Conversion Error", error_msg)
-                return
-
-            # Now load the converted PDF
-            self.load_pdf(temp_pdf)
-
-        except Exception as e:
-            logging.error(f"PowerPoint conversion error: {str(e)}")
-            QMessageBox.warning(self, "Error", f"Failed to convert PowerPoint to PDF: {str(e)}")
-
-    def find_libreoffice_path(self):
-        """Find LibreOffice/OpenOffice executable on the system."""
-        # Common paths for different operating systems
-        if sys.platform == "win32":
-            possible_paths = [
-                r"C:\Program Files\LibreOffice\program\soffice.exe",
-                r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
-                r"C:\Program Files\OpenOffice\program\soffice.exe",
-                r"C:\Program Files (x86)\OpenOffice\program\soffice.exe",
-            ]
-        elif sys.platform == "darwin":  # macOS
-            possible_paths = [
-                "/Applications/LibreOffice.app/Contents/MacOS/soffice",
-                "/Applications/OpenOffice.app/Contents/MacOS/soffice",
-            ]
-        else:  # Linux and others
-            possible_paths = [
-                "/usr/bin/soffice",
-                "/usr/lib/libreoffice/program/soffice",
-                "/opt/libreoffice/program/soffice",
-            ]
-
-            # Also try to find in PATH
-            try:
-                result = subprocess.run(["which", "soffice"], capture_output=True, text=True, check=False)
-                if result.returncode == 0:
-                    possible_paths.insert(0, result.stdout.strip())
-            except:
-                pass
-
-        # Check if any of the paths exist
-        for path in possible_paths:
-            if os.path.exists(path):
-                return path
-
-        return None
 
     def load_image_as_pdf(self, image_path):
         try:
@@ -798,7 +652,7 @@ class MainWindow(QMainWindow):
 
                     # Create and add widget
                     try:
-                        item_widget = PdfPageItem(current_count + page_num, image, pdf_path, page_num + 1)
+                        item_widget = PdfPageItem(current_count + page_num + 1, image, pdf_path, page_num + 1)
                         self.page_items.append(item_widget)
                         self.grid_layout.addWidget(item_widget, (current_count + page_num) // self.column_count, (current_count + page_num) % self.column_count)
                         item_widget.set_image_size(self.zoom_level)
