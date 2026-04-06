@@ -9,7 +9,7 @@ import fitz  # PyMuPDF
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
     QWidget, QLabel, QCheckBox, QPushButton, QFileDialog, QLineEdit, QMessageBox,
-    QDialog, QFormLayout, QComboBox, QDialogButtonBox
+    QDialog, QFormLayout, QComboBox, QDialogButtonBox, QInputDialog
 )
 from PySide6.QtGui import QPixmap, QImage, QDrag, QAction, QTransform, QPainter, QIcon
 from PySide6.QtCore import Qt, QMimeData
@@ -26,20 +26,34 @@ else:
     logging.basicConfig(handlers=[logging.NullHandler()])
 
 
+PAGE_SIZES = {
+    'Letter (8.5" × 11")': (612, 792),
+    "A4 (210mm × 297mm)": (595, 842),
+    'Legal (8.5" × 14")': (612, 1008),
+    'Tabloid (11" × 17")': (792, 1224),
+}
+
+
 class NormalizeDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Normalize Options")
+        self.setWindowTitle("Normalize Page Size")
         layout = QFormLayout(self)
 
-        self.method_combo = QComboBox()
-        self.method_combo.addItems(["Fit", "Fill", "Stretch"])
-        layout.addRow("Method:", self.method_combo)
+        self.size_combo = QComboBox()
+        self.size_combo.addItems(PAGE_SIZES.keys())
+        layout.addRow("Target Size:", self.size_combo)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
+
+    def selected_size(self):
+        return PAGE_SIZES[self.size_combo.currentText()]
+
+    def selected_name(self):
+        return self.size_combo.currentText()
 
 
 class PdfPageItem(QWidget):
@@ -58,6 +72,7 @@ class PdfPageItem(QWidget):
         layout = QVBoxLayout()
 
         self.checkbox = QCheckBox(f"Page {page_number + 1}")
+        self.checkbox.stateChanged.connect(lambda _: self.window().update_status_bar())
         layout.addWidget(self.checkbox)
 
         self.label = QLabel()
@@ -185,6 +200,7 @@ class MainWindow(QMainWindow):
         # Add menu bar
         self.create_menu_bar()
         self.delete_pdf_files("temp_files")
+        self.statusBar().showMessage("No pages loaded")
 
     def delete_pdf_files(self, folder_path):
         for filename in os.listdir(folder_path):
@@ -271,9 +287,6 @@ class MainWindow(QMainWindow):
             if item.is_checked():
                 item.rotate()
         self.update_grid_layout()
-        # Hacky way to make sure that they don't appear too big visually
-        self.zoom_in()
-        self.zoom_out()
 
     def add_bottom_widgets(self):
         # Create a layout for output file settings
@@ -318,17 +331,12 @@ class MainWindow(QMainWindow):
 
         dialog = NormalizeDialog(self)
         if dialog.exec():
-            method = dialog.method_combo.currentText()
-            target_size = self.get_target_page_size(selected_items)
-            if not target_size:
-                QMessageBox.warning(self, "Error", "Unable to determine target size for normalization.")
-                return
-
+            target_size = dialog.selected_size()
             for item in selected_items:
-                item.set_normalized_size(target_size, method)
-
-            QMessageBox.information(self, "Success", f"Normalized {len(selected_items)} pages to size {target_size[0]}x{target_size[1]} using {method} method.")
-            self.update_grid_layout()  # Refresh the display
+                item.set_normalized_size(target_size, "Fit")
+            n = len(selected_items)
+            QMessageBox.information(self, "Success", f"Normalized {n} page{'s' if n != 1 else ''} to {dialog.selected_name()}.")
+            self.update_grid_layout()
 
     def unnormalize_selected_pages(self):
         selected_items = [item for item in self.page_items if item.is_checked()]
@@ -342,52 +350,41 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Success", f"Unnormalized {len(selected_items)} pages.")
         self.update_grid_layout()  # Refresh the display
 
-    def get_target_page_size(self, items):
-        # This method determines the target page size for normalization
-        # Currently using the size of the first selected page
-        if items:
-            first_item = items[0]
-            doc = fitz.open(first_item.original_pdf_path)
-            page = doc[first_item.original_page_number - 1]
-            size = page.rect.width, page.rect.height
-            doc.close()
-            return size
-        return None
-
     def create_pdf(self, selected_only):
         output_file = self.output_line_edit.text()
         if not output_file:
             QMessageBox.warning(self, "Error", "Please specify an output file name.")
             return
 
-        new_pdf = fitz.open()  # Create a new empty PDF
-
-        for item in self.page_items:
-            if selected_only and not item.is_checked():
-                continue
-            original_pdf_path, original_page_number = item.original_pdf_path, item.original_page_number
-            original_pdf = fitz.open(original_pdf_path)
-            page = original_pdf[original_page_number - 1]
-
-            # Apply rotation
-            if item.rotation != 0:
-                page.set_rotation(item.rotation)
-
-            # Apply normalization if the page has been normalized
-            if item.normalized_size:
-                new_page = new_pdf.new_page(width=item.normalized_size[0], height=item.normalized_size[1])
-                if item.normalization_method == "Fit":
-                    new_page.show_pdf_page(new_page.rect, original_pdf, original_page_number - 1, keep_proportion=True)
-                elif item.normalization_method == "Fill":
-                    new_page.show_pdf_page(new_page.rect, original_pdf, original_page_number - 1, keep_proportion=True, overlay=True)
-                elif item.normalization_method == "Stretch":
-                    new_page.show_pdf_page(new_page.rect, original_pdf, original_page_number - 1, keep_proportion=False)
-            else:
-                new_pdf.insert_pdf(original_pdf, from_page=original_page_number - 1, to_page=original_page_number - 1)
-
-            original_pdf.close()
+        new_pdf = fitz.open()
+        open_docs = {}
 
         try:
+            for item in self.page_items:
+                if selected_only and not item.is_checked():
+                    continue
+
+                path = item.original_pdf_path
+                if path not in open_docs:
+                    open_docs[path] = fitz.open(path)
+                original_pdf = open_docs[path]
+                page_idx = item.original_page_number - 1
+                page = original_pdf[page_idx]
+
+                if item.rotation != 0:
+                    page.set_rotation(item.rotation)
+
+                if item.normalized_size:
+                    new_page = new_pdf.new_page(width=item.normalized_size[0], height=item.normalized_size[1])
+                    if item.normalization_method == "Fit":
+                        new_page.show_pdf_page(new_page.rect, original_pdf, page_idx, keep_proportion=True)
+                    elif item.normalization_method == "Fill":
+                        new_page.show_pdf_page(new_page.rect, original_pdf, page_idx, keep_proportion=True, overlay=True)
+                    elif item.normalization_method == "Stretch":
+                        new_page.show_pdf_page(new_page.rect, original_pdf, page_idx, keep_proportion=False)
+                else:
+                    new_pdf.insert_pdf(original_pdf, from_page=page_idx, to_page=page_idx)
+
             new_pdf.save(output_file, deflate=True, garbage=4)
             new_pdf.close()
 
@@ -395,6 +392,9 @@ class MainWindow(QMainWindow):
                 self.open_pdf(output_file)
         except ValueError:
             QMessageBox.warning(self, "Error", "Cannot save with zero pages.")
+        finally:
+            for doc in open_docs.values():
+                doc.close()
 
     def create_from_selected_pages(self):
         self.create_pdf(selected_only=True)
@@ -440,6 +440,7 @@ class MainWindow(QMainWindow):
     def deselect_all_pages(self):
         for item in self.page_items:
             item.checkbox.setChecked(False)
+        self.update_status_bar()
 
     def remove_selected_pages(self):
         self.page_items = [item for item in self.page_items if not item.is_checked()]
@@ -449,10 +450,12 @@ class MainWindow(QMainWindow):
     def clear_pages(self):
         self.page_items.clear()
         self.rearrange_grid(self.column_count)
+        self.update_status_bar()
 
     def select_all_pages(self):
         for item in self.page_items:
             item.checkbox.setChecked(True)
+        self.update_status_bar()
 
     def find_pdf_page_item_at(self, position):
         for child in self.central_widget.findChildren(PdfPageItem):
@@ -547,7 +550,6 @@ class MainWindow(QMainWindow):
                     import comtypes.client
 
                     logging.info("Attempting to convert PowerPoint to PDF using COM interface")
-                    print("Converting PowerPoint to PDF using PowerPoint COM interface...")
 
                     powerpoint = comtypes.client.CreateObject("Powerpoint.Application")
                     powerpoint.Visible = 1
@@ -566,10 +568,8 @@ class MainWindow(QMainWindow):
 
                     converted = True
                     logging.info(f"Successfully converted {ppt_path} to PDF using COM")
-                    print(f"Successfully converted {ppt_path} to PDF using COM")
                 except Exception as e:
                     logging.error(f"COM conversion failed: {str(e)}")
-                    print(f"COM conversion failed: {str(e)}")
 
             # Try LibreOffice for all platforms as a fallback
             if not converted:
@@ -579,7 +579,6 @@ class MainWindow(QMainWindow):
 
                     if soffice_path:
                         logging.info(f"Attempting to convert using LibreOffice/OpenOffice at {soffice_path}")
-                        print(f"Converting PowerPoint to PDF using {soffice_path}...")
 
                         # Ensure temp directory exists
                         temp_dir = os.path.dirname(temp_pdf)
@@ -613,12 +612,10 @@ class MainWindow(QMainWindow):
 
                         converted = True
                         logging.info(f"Successfully converted {ppt_path} to PDF using LibreOffice")
-                        print(f"Successfully converted {ppt_path} to PDF using LibreOffice")
                     else:
                         raise Exception("LibreOffice/OpenOffice not found")
                 except Exception as e:
                     logging.error(f"LibreOffice conversion failed: {str(e)}")
-                    print(f"LibreOffice conversion failed: {str(e)}")
 
             # If all conversion methods failed
             if not converted:
@@ -697,119 +694,101 @@ class MainWindow(QMainWindow):
 
     def load_pdf(self, pdf_path):
         logging.info(f"Attempting to load PDF: {pdf_path}")
-        print(f"Attempting to load PDF: {pdf_path}")
 
-        # Check file size
         file_size = os.path.getsize(pdf_path)
         logging.debug(f"File size: {file_size / (1024 * 1024):.2f} MB")
-        print(f"File size: {file_size / (1024 * 1024):.2f} MB")
-        if file_size > 100_000_000:  # 100 MB limit, adjust as needed
+        if file_size > 100_000_000:
             logging.warning(f"File is too large: {file_size / (1024 * 1024):.2f} MB")
             QMessageBox.warning(self, "Error", "File is too large to load")
             return
 
+        current_count = len(self.page_items)
+
         try:
-            # Attempt to open the PDF
             doc = fitz.open(pdf_path)
             logging.info(f"Successfully opened {pdf_path}")
-            print(f"Successfully opened {pdf_path}")
 
-            # Log PDF information
+            if doc.needs_pass:
+                password, ok = QInputDialog.getText(
+                    self, "Password Required",
+                    f"'{os.path.basename(pdf_path)}' is password-protected.\nEnter password:",
+                    QLineEdit.Password
+                )
+                if not ok or not password:
+                    doc.close()
+                    return
+                if not doc.authenticate(password):
+                    QMessageBox.warning(self, "Error", "Incorrect password.")
+                    doc.close()
+                    return
+
             logging.debug(f"Number of pages: {len(doc)}")
             logging.debug(f"Metadata: {doc.metadata}")
             logging.debug(f"Is encrypted: {doc.is_encrypted}")
             logging.debug(f"Permissions: {doc.permissions}")
-            print(f"Number of pages: {len(doc)}")
-            print(f"Metadata: {doc.metadata}")
-            print(f"Is encrypted: {doc.is_encrypted}")
-            print(f"Permissions: {doc.permissions}")
 
-            # Check permissions
             if doc.permissions <= 0:
                 logging.warning(f"Unusual permissions value ({doc.permissions}) for {pdf_path}")
-                print(f"Warning: Unusual permissions value ({doc.permissions}) for {pdf_path}")
 
-            current_count = len(self.page_items)
             for page_num in range(len(doc)):
                 try:
-                    # Check available memory before loading each page
                     available_memory = psutil.virtual_memory().available
-                    if available_memory < 100 * 1024 * 1024:  # 100 MB threshold
+                    if available_memory < 100 * 1024 * 1024:
                         logging.warning(f"Low memory warning: Only {available_memory / (1024 * 1024):.2f} MB available")
-                        print(f"Low memory warning: Only {available_memory / (1024 * 1024):.2f} MB available")
                         QMessageBox.warning(self, "Low Memory", "Running low on memory. The application might become unstable.")
 
-                    # Load the page
                     page = doc.load_page(page_num)
                     logging.debug(f"Loaded page {page_num + 1}")
-                    print(f"Loaded page {page_num + 1}")
 
-                    # Create pixmap with error handling
                     try:
-                        pix = page.get_pixmap(alpha=False)  # Disable alpha channel
+                        pix = page.get_pixmap(alpha=False)
                         logging.debug(f"Created pixmap for page {page_num + 1}")
-                        print(f"Created pixmap for page {page_num + 1}")
                     except Exception as e:
                         logging.error(f"Error creating pixmap for page {page_num + 1}: {str(e)}")
-                        print(f"Error creating pixmap for page {page_num + 1}: {str(e)}")
-                        continue  # Skip this page and try the next one
+                        continue
 
-                    # Create QImage with error handling
                     try:
                         if pix.samples:
                             image = QImage(pix.samples, pix.width, pix.height, pix.stride, QImage.Format_RGB888)
                             if image.isNull():
                                 raise ValueError(f"Created QImage is null for page {page_num + 1}")
                             logging.debug(f"Created QImage for page {page_num + 1}")
-                            print(f"Created QImage for page {page_num + 1}")
                         else:
                             raise ValueError(f"Pixmap samples are null for page {page_num + 1}")
                     except Exception as e:
                         logging.error(f"Error creating QImage for page {page_num + 1}: {str(e)}")
-                        print(f"Error creating QImage for page {page_num + 1}: {str(e)}")
-                        continue  # Skip this page and try the next one
+                        continue
 
-                    # Create and add widget
                     try:
                         item_widget = PdfPageItem(current_count + page_num, image, pdf_path, page_num + 1)
                         self.page_items.append(item_widget)
                         self.grid_layout.addWidget(item_widget, (current_count + page_num) // self.column_count, (current_count + page_num) % self.column_count)
                         item_widget.set_image_size(self.zoom_level)
                         logging.debug(f"Added widget for page {page_num + 1}")
-                        print(f"Added widget for page {page_num + 1}")
                     except Exception as e:
                         logging.error(f"Error adding widget for page {page_num + 1}: {str(e)}")
-                        print(f"Error adding widget for page {page_num + 1}: {str(e)}")
 
                 except Exception as e:
                     logging.error(f"Error processing page {page_num + 1} of {pdf_path}: {str(e)}")
-                    print(f"Error processing page {page_num + 1} of {pdf_path}: {str(e)}")
                     QMessageBox.warning(self, "Error", f"Failed to process page {page_num + 1}: {str(e)}")
 
-            # Close the document
             doc.close()
             self.update_page_numbers()
             self.update_grid_layout()
             logging.info(f"Successfully loaded all pages from {pdf_path}")
-            print(f"Successfully loaded all pages from {pdf_path}")
 
         except fitz.FileDataError as e:
             logging.error(f"PyMuPDF FileDataError for {pdf_path}: {str(e)}")
-            print(f"PyMuPDF FileDataError for {pdf_path}: {str(e)}")
             QMessageBox.warning(self, "Error", f"Failed to load PDF: {str(e)}")
         except MemoryError:
             logging.error(f"MemoryError while loading {pdf_path}")
-            print(f"MemoryError while loading {pdf_path}")
             QMessageBox.warning(self, "Error", "Not enough memory to load this PDF")
         except Exception as e:
             logging.error(f"Unexpected error loading {pdf_path}: {str(e)}")
-            print(f"Unexpected error loading {pdf_path}: {str(e)}")
             QMessageBox.warning(self, "Error", f"An unexpected error occurred: {str(e)}")
 
-        # Add a final check to see if any pages were successfully loaded
-        if not self.page_items:
+        if len(self.page_items) == current_count:
             logging.warning(f"No pages were successfully loaded from {pdf_path}")
-            print(f"No pages were successfully loaded from {pdf_path}")
             QMessageBox.warning(self, "Warning", "No pages were successfully loaded from the PDF.")
 
     def resizeEvent(self, event):
@@ -833,11 +812,11 @@ class MainWindow(QMainWindow):
         return max(1, window_width // item_width)
 
     def rearrange_grid(self, column_count):
-        # Clear the layout
-        for i in reversed(range(self.grid_layout.count())):
-            self.grid_layout.itemAt(i).widget().setParent(None)
+        while self.grid_layout.count():
+            widget = self.grid_layout.takeAt(0).widget()
+            if widget not in self.page_items:
+                widget.deleteLater()
 
-        # Re-add widgets in the new order
         row = column = 0
         for widget in self.page_items:
             self.grid_layout.addWidget(widget, row, column)
@@ -849,6 +828,15 @@ class MainWindow(QMainWindow):
     def update_page_numbers(self):
         for i, widget in enumerate(self.page_items):
             widget.update_page_number(i + 1)
+        self.update_status_bar()
+
+    def update_status_bar(self):
+        total = len(self.page_items)
+        if total == 0:
+            self.statusBar().showMessage("No pages loaded")
+        else:
+            selected = sum(1 for item in self.page_items if item.is_checked())
+            self.statusBar().showMessage(f"{total} page{'s' if total != 1 else ''} loaded  |  {selected} selected")
 
     def closeEvent(self, event):
         """Override closeEvent to clean up temp files before closing."""
