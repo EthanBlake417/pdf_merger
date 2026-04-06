@@ -3,22 +3,18 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QCheckBox, QListWidget, QListWidgetItem, QPushButton, QFileDialog, QLineEdit, QMessageBox, \
-    QDialog, QFormLayout, QComboBox, QDialogButtonBox, QHBoxLayout
-from PySide6.QtCore import Qt, QMimeData
-import fitz  # PyMuPDF
-
-from PySide6.QtWidgets import QListWidgetItem, QWidget, QHBoxLayout, QLabel, QCheckBox
-from PySide6.QtGui import QPixmap, QImage, QDrag, QAction, QTransform, QPainter, QIcon
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGridLayout, QScrollArea, QVBoxLayout
 import logging
 import psutil
+import fitz  # PyMuPDF
+from PySide6.QtWidgets import (
+    QApplication, QMainWindow, QVBoxLayout, QHBoxLayout, QGridLayout, QScrollArea,
+    QWidget, QLabel, QCheckBox, QPushButton, QFileDialog, QLineEdit, QMessageBox,
+    QDialog, QFormLayout, QComboBox, QDialogButtonBox
+)
+from PySide6.QtGui import QPixmap, QImage, QDrag, QAction, QTransform, QPainter, QIcon
+from PySide6.QtCore import Qt, QMimeData
 
 from help_menu import HelpMenu
-
-# For PowerPoint support
-import platform
 
 ENABLE_LOGGING = False
 if not os.path.exists("temp_files"):
@@ -212,10 +208,6 @@ class MainWindow(QMainWindow):
         # Help Menu
         help_menu = HelpMenu(self, self.windowIcon())
         menu_bar.addMenu(help_menu)
-
-    def show_help_message(self):
-        message = "Press Ctrl and click on a page to select its checkbox."
-        QMessageBox.information(self, "How to Use", message)
 
     def add_top_widgets(self):
         # Create a horizontal layout for buttons
@@ -440,8 +432,6 @@ class MainWindow(QMainWindow):
             self.load_pdfs_from_folder(folder_path)
 
     def load_pdfs_from_folder(self, folder_path):
-        # Assuming you're using os.listdir, adjust if using a different method
-        import os
         for file_name in os.listdir(folder_path):
             if file_name.lower().endswith(('.pdf', '.png', '.jpg', '.jpeg', '.tiff', '.tif', '.pptx', '.ppt')):
                 full_path = os.path.join(folder_path, file_name)
@@ -492,23 +482,6 @@ class MainWindow(QMainWindow):
                     self.update_page_numbers()
 
         event.acceptProposedAction()
-
-    def find_nearest_widget_index(self, position):
-        min_distance = float('inf')
-        nearest_index = None
-
-        for i, widget in enumerate(self.page_items):
-            # Calculate the position of the widget in the grid
-            row, column = self.grid_layout.getItemPosition(i)[:2]
-            widget_pos = self.grid_layout.cellRect(row, column).center()
-
-            # Calculate the distance to the drop position
-            distance = (widget_pos - position).manhattanLength()
-            if distance < min_distance:
-                min_distance = distance
-                nearest_index = i
-
-        return nearest_index
 
     def wheelEvent(self, event):
         modifiers = QApplication.keyboardModifiers()
