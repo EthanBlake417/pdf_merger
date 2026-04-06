@@ -388,7 +388,7 @@ class MainWindow(QMainWindow):
             original_pdf.close()
 
         try:
-            new_pdf.save(output_file)
+            new_pdf.save(output_file, deflate=True, garbage=4)
             new_pdf.close()
 
             if self.open_pdf_checkbox.isChecked():
@@ -687,7 +687,7 @@ class MainWindow(QMainWindow):
 
             # Save the PDF to a temporary file or in memory
             temp_pdf = f"temp_files/{self.counter}.pdf"  # Consider using a more robust temp file approach
-            pdf_doc.save(temp_pdf)
+            pdf_doc.save(temp_pdf, deflate=True)
             pdf_doc.close()
 
             # Now load this temporary PDF as usual
