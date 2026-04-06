@@ -1,9 +1,18 @@
-# pdf_merger
+# PDF Editor
 
-## Run this by running gui.py
-#### Merges .png files, .jpg files, .jpeg files, and pdf files into one pdf.
+A GUI application for editing and combining PDF files and images.
 
-#### You can Drag and Drop Files, and Folders into the GUI. When dropping a folder, it will pull out all convertible file types.
+## Run
 
-# pdf_editor
-##### A more advanced program that allows you to add images or pdfs, and rearranged and delete pages before saving to pdf.
+```
+python pdf_editor.py
+```
+
+## Features
+
+- Add PDF files, images (PNG, JPG, JPEG, TIFF), or PowerPoint files (PPT, PPTX)
+- Drag and drop files or folders directly into the window
+- Rearrange pages by dragging and dropping thumbnails
+- Select, rotate, and normalize pages before saving
+- Save selected pages or all pages to a new PDF
+- Zoom in/out with buttons or Ctrl+Mouse Wheel
